@@ -91,6 +91,8 @@ Main table storing weather alert information from the NWS API.
 | instruction | TEXT | Yes | Safety instructions |
 | response | TEXT | Yes | Recommended response (Shelter, Evacuate, Prepare, etc.) |
 | parameters | TEXT | Yes | Additional parameters as JSON |
+| ugc | TEXT | Yes | Universal Geographic Code data (JSON array) |
+| same | TEXT | Yes | SAME codes (Specific Area Message Encoding, JSON array) |
 | raw_json | TEXT | Yes | Complete raw API response as JSON |
 | created_at | DATETIME | No | First insert timestamp (auto-set) |
 | updated_at | DATETIME | No | Last update timestamp (auto-set on each update) |
@@ -149,6 +151,29 @@ VALUES
     ('urn:oid:2.49.0.1.840.0.12345', 'COZ041'),
     ('urn:oid:2.49.0.1.840.0.12345', 'COZ042');
 ```
+
+---
+
+## Table: alerts_archive
+
+Archive table for expired alerts. Has the same structure as the alerts table plus an archived timestamp.
+
+### Columns
+
+Same as `alerts` table, plus:
+
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| archived_at | DATETIME | No | Timestamp when alert was archived (auto-set) |
+
+### Indexes
+
+- `idx_archive_archived_at`: Index on `archived_at` for time-based queries
+- `idx_archive_expires`: Index on `expires` for finding expired records
+
+### Purpose
+
+Expired alerts are automatically moved from the `alerts` table to this archive table by the scheduler. Old archived records are removed after the configured retention period (default: 30 days).
 
 ---
 

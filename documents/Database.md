@@ -225,6 +225,117 @@ $database->cleanupOldApiCalls();
 
 ---
 
+### archiveExpiredAlerts()
+
+```php
+public function archiveExpiredAlerts(): int
+```
+
+Moves expired alerts from the main alerts table to the alerts_archive table.
+
+**Returns:** int - Number of alerts archived
+
+**Features:**
+- Automatically runs as part of the scheduler
+- Selects alerts where `expires < now()`
+- Copies to archive table with archived_at timestamp
+- Removes from main alerts table
+- Maintains data integrity
+
+**Example:**
+```php
+$archivedCount = $database->archiveExpiredAlerts();
+echo "Archived $archivedCount expired alerts";
+```
+
+---
+
+### removeOldArchivedAlerts()
+
+```php
+public function removeOldArchivedAlerts(int $days): int
+```
+
+Removes archived alerts older than the specified number of days.
+
+**Parameters:**
+- `$days` (int): Number of days to retain in archive
+
+**Returns:** int - Number of archived alerts removed
+
+**Features:**
+- Automatically runs as part of the scheduler
+- Removes records where `archived_at < now() - X days`
+- Prevents unlimited archive growth
+- Configurable retention period
+
+**Example:**
+```php
+// Remove archives older than 30 days
+$removedCount = $database->removeOldArchivedAlerts(30);
+echo "Removed $removedCount old archived alerts";
+```
+
+---
+
+### vacuumDatabase()
+
+```php
+public function vacuumDatabase(): void
+```
+
+Runs SQLite VACUUM command to reclaim disk space and optimize database.
+
+**Features:**
+- Automatically runs periodically via scheduler
+- Reclaims space from deleted records
+- Rebuilds indexes for better performance
+- Defragments the database file
+- Should be run during low-activity periods
+
+**Benefits:**
+- Reduces database file size
+- Improves query performance
+- Optimizes index usage
+- Maintains database health
+
+**Example:**
+```php
+$database->vacuumDatabase();
+// Database is now optimized
+```
+
+---
+
+## Scheduler Integration
+
+The application includes a scheduler (`src/scheduler.php`) that automatically manages:
+
+1. **API Fetching**: Pulls new alerts at configurable intervals
+2. **Archiving**: Moves expired alerts to archive table
+3. **Cleanup**: Removes old archived records
+4. **Maintenance**: Runs periodic database vacuum
+
+### Scheduler Configuration
+
+Set via environment variables:
+- `FETCH_INTERVAL`: Seconds between API calls (default: 300)
+- `VACUUM_INTERVAL_DAYS`: Days between vacuum operations (default: 7)
+- `ARCHIVE_RETENTION_DAYS`: Days to keep archived alerts (default: 30)
+
+### How It Works
+
+The scheduler runs in a continuous loop:
+
+1. Fetch alerts from API
+2. Store in database
+3. Archive expired alerts
+4. Check if it's time to remove old archives (daily check)
+5. Check if it's time to vacuum database (weekly check)
+6. Sleep until next fetch interval
+
+---
+
 ## Database Schema Details
 
 ### alerts Table
@@ -254,6 +365,8 @@ $database->cleanupOldApiCalls();
 | instruction | TEXT | Safety instructions |
 | response | TEXT | Recommended response |
 | parameters | TEXT | Additional parameters (JSON) |
+| ugc | TEXT | Universal Geographic Code data (JSON) |
+| same | TEXT | SAME codes (JSON) |
 | raw_json | TEXT | Complete raw API response |
 | created_at | DATETIME | First insert timestamp |
 | updated_at | DATETIME | Last update timestamp |
@@ -265,6 +378,16 @@ $database->cleanupOldApiCalls();
 | id | INTEGER PRIMARY KEY | Auto-increment ID |
 | alert_id | TEXT | Foreign key to alerts.id |
 | zone_id | TEXT | Zone identifier |
+
+### alerts_archive Table
+
+Same structure as alerts table, plus:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| archived_at | DATETIME | Timestamp when archived |
+
+**Purpose:** Stores expired alerts for historical reference. Automatically populated by the scheduler.
 
 ### api_calls Table
 

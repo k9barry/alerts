@@ -59,6 +59,28 @@ The application uses environment variables for configuration, allowing easy cust
 
 **Local**: Use `./logs/alerts.log` for local development.
 
+### Scheduler Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `FETCH_INTERVAL` | `300` | Time between API fetches in seconds (300 = 5 minutes) |
+| `VACUUM_INTERVAL_DAYS` | `7` | Database vacuum frequency in days |
+| `ARCHIVE_RETENTION_DAYS` | `30` | How long to keep archived alerts in days |
+
+**Fetch Interval**: Controls how often the scheduler fetches new alerts from the API. Set in seconds.
+- Minimum recommended: 60 seconds (1 minute)
+- Default: 300 seconds (5 minutes)
+- Example: `FETCH_INTERVAL=600` for 10-minute intervals
+
+**Vacuum Interval**: How often to run SQLite VACUUM to reclaim disk space and optimize performance.
+- Recommended: 7-14 days for active systems
+- Example: `VACUUM_INTERVAL_DAYS=14` for bi-weekly vacuum
+
+**Archive Retention**: Expired alerts are moved to an archive table. This setting controls how long to keep them.
+- Minimum: 1 day
+- Default: 30 days
+- Example: `ARCHIVE_RETENTION_DAYS=90` to keep 3 months of history
+
 ### Timezone
 
 | Variable | Default | Description |
@@ -95,6 +117,10 @@ API_RATE_PERIOD=60
 
 LOG_LEVEL=DEBUG
 LOG_PATH=/app/logs/alerts.log
+
+FETCH_INTERVAL=300
+VACUUM_INTERVAL_DAYS=7
+ARCHIVE_RETENTION_DAYS=30
 
 TZ=America/New_York
 ```

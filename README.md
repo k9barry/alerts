@@ -5,8 +5,12 @@ A PHP-based application that fetches weather alerts from the [weather.gov API](h
 ## Features
 
 - **Automated Alert Fetching**: Continuously pulls weather alerts from the NWS API
+- **Configurable Fetch Interval**: Set how often to check for new alerts (default: 5 minutes)
 - **Rate Limiting**: Respects API rate limits (max 4 calls per minute)
-- **SQLite Database**: Stores alerts in a structured SQLite database
+- **SQLite Database**: Stores alerts in a structured SQLite database with UGC and SAME codes
+- **Automatic Archiving**: Expired alerts are moved to an archive table
+- **Archive Retention**: Old archived records are automatically removed after configurable period
+- **Database Maintenance**: Periodic vacuum to optimize database performance
 - **Docker Compose**: Easy deployment with multiple services
 - **Logging**: Comprehensive logging with Dozzle for real-time monitoring
 - **Database Browser**: Built-in SQLite browser for easy data inspection
@@ -61,11 +65,16 @@ Main table storing weather alert information:
 - `headline`: Alert headline
 - `description`: Detailed alert description
 - `instruction`: Safety instructions
+- `ugc`: Universal Geographic Code data (from API parameters)
+- `same`: SAME (Specific Area Message Encoding) codes (from API parameters)
 - `sent`, `effective`, `onset`, `expires`, `ends`: Various timestamps
 - And many more fields...
 
 ### alert_zones
 Stores affected geographic zones for each alert.
+
+### alerts_archive
+Archive table for expired alerts with same structure as alerts table plus `archived_at` timestamp.
 
 ### api_calls
 Tracks API calls for rate limiting and monitoring.
@@ -80,6 +89,9 @@ Configuration is managed through environment variables. See `.env.example` for a
 - `API_RATE_LIMIT`: Maximum API calls per period (default: 4)
 - `API_RATE_PERIOD`: Rate limit period in seconds (default: 60)
 - `LOG_LEVEL`: Logging level (DEBUG, INFO, WARNING, ERROR)
+- `FETCH_INTERVAL`: API fetch interval in seconds (default: 300)
+- `VACUUM_INTERVAL_DAYS`: Database vacuum interval in days (default: 7)
+- `ARCHIVE_RETENTION_DAYS`: How long to keep archived alerts in days (default: 30)
 
 ## Development
 
