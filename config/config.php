@@ -84,4 +84,10 @@ return [
         'level' => config('LOG_LEVEL', 'DEBUG'),
         'path' => config('LOG_PATH', __DIR__ . '/../logs/alerts.log'),
     ],
+    
+    'scheduler' => [
+        'fetch_interval' => (int)config('FETCH_INTERVAL', 300),
+        'vacuum_interval_days' => (int)config('VACUUM_INTERVAL_DAYS', 7),
+        'archive_retention_days' => (int)config('ARCHIVE_RETENTION_DAYS', 30),
+    ],
 ];

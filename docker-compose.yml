@@ -14,13 +14,16 @@ services:
     environment:
       - APP_ENV=${APP_ENV:-development}
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+      - FETCH_INTERVAL=${FETCH_INTERVAL:-300}
+      - VACUUM_INTERVAL_DAYS=${VACUUM_INTERVAL_DAYS:-7}
+      - ARCHIVE_RETENTION_DAYS=${ARCHIVE_RETENTION_DAYS:-30}
     restart: unless-stopped
     depends_on:
       - dozzle
     networks:
       - alerts-network
-    # Run the application periodically (every 5 minutes)
-    command: sh -c "while true; do php src/app.php; sleep 300; done"
+    # Run the scheduler which handles fetching, archiving, and maintenance
+    command: php src/scheduler.php
     logging:
       driver: "json-file"
       options:
