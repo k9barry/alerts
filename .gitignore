@@ -1,0 +1,34 @@
+# Environment variables
+.env
+
+# SQLite database files
+*.db
+*.sqlite
+*.sqlite3
+
+# PHP
+vendor/
+composer.lock
+
+# Logs
+logs/*.log
+!logs/.gitkeep
+
+# Docker
+.docker/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp

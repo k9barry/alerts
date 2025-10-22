@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  # Main alerts service
+  alerts:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: alerts-app
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./.env:/app/.env
+    environment:
+      - APP_ENV=${APP_ENV:-development}
+      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+    restart: unless-stopped
+    depends_on:
+      - dozzle
+    networks:
+      - alerts-network
+    # Run the application periodically (every 5 minutes)
+    command: sh -c "while true; do php src/app.php; sleep 300; done"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # SQLite Browser service
+  sqlitebrowser:
+    image: lscr.io/linuxserver/sqlitebrowser:latest
+    container_name: alerts-sqlitebrowser
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=${TZ:-America/New_York}
+    volumes:
+      - ./data:/config
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    networks:
+      - alerts-network
+
+  # Dozzle logging service
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: alerts-dozzle
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    networks:
+      - alerts-network
+    environment:
+      - DOZZLE_LEVEL=info
+      - DOZZLE_TAILSIZE=300
+      - DOZZLE_FILTER=name=alerts
+
+networks:
+  alerts-network:
+    driver: bridge
+
+volumes:
+  data:
+  logs:
