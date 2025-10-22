@@ -2,8 +2,9 @@ FROM php:8.1-cli-alpine
 
 # Install required extensions and dependencies
 RUN apk add --no-cache \
-    sqlite \
+    sqlite-libs \
     sqlite-dev \
+    curl-dev \
     curl \
     && docker-php-ext-install pdo pdo_sqlite
 
