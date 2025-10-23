@@ -104,9 +104,9 @@ class Database
         $pdo = $this->getConnection();
         
         try {
-            // Main alerts table
+            // Main active alerts table (renamed from 'alerts' to 'active')
             $pdo->exec("
-                CREATE TABLE IF NOT EXISTS alerts (
+                CREATE TABLE IF NOT EXISTS active (
                     id TEXT PRIMARY KEY,
                     type TEXT,
                     geometry_type TEXT,
@@ -139,10 +139,10 @@ class Database
             ");
             
             // Index for common queries
-            $pdo->exec("CREATE INDEX IF NOT EXISTS idx_alerts_event ON alerts(event)");
-            $pdo->exec("CREATE INDEX IF NOT EXISTS idx_alerts_severity ON alerts(severity)");
-            $pdo->exec("CREATE INDEX IF NOT EXISTS idx_alerts_expires ON alerts(expires)");
-            $pdo->exec("CREATE INDEX IF NOT EXISTS idx_alerts_sent ON alerts(sent)");
+            $pdo->exec("CREATE INDEX IF NOT EXISTS idx_active_event ON active(event)");
+            $pdo->exec("CREATE INDEX IF NOT EXISTS idx_active_severity ON active(severity)");
+            $pdo->exec("CREATE INDEX IF NOT EXISTS idx_active_expires ON active(expires)");
+            $pdo->exec("CREATE INDEX IF NOT EXISTS idx_active_sent ON active(sent)");
             
             // Table for storing affected zones
             $pdo->exec("
@@ -150,7 +150,7 @@ class Database
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     alert_id TEXT NOT NULL,
                     zone_id TEXT NOT NULL,
-                    FOREIGN KEY (alert_id) REFERENCES alerts(id) ON DELETE CASCADE,
+                    FOREIGN KEY (alert_id) REFERENCES active(id) ON DELETE CASCADE,
                     UNIQUE(alert_id, zone_id)
                 )
             ");
@@ -230,7 +230,7 @@ class Database
             $geometry = $alert['geometry'] ?? null;
             
             $stmt = $pdo->prepare("
-                INSERT OR REPLACE INTO alerts (
+                INSERT OR REPLACE INTO active (
                     id, type, geometry_type, area_desc, sent, effective, onset, expires, ends,
                     status, message_type, category, severity, certainty, urgency, event,
                     sender, sender_name, headline, description, instruction, response,
@@ -412,13 +412,13 @@ class Database
             $pdo->exec("
                 INSERT OR REPLACE INTO alerts_archive 
                 SELECT *, CURRENT_TIMESTAMP as archived_at
-                FROM alerts
+                FROM active
                 WHERE datetime(expires) < datetime('now')
             ");
             
             // Get count before deleting
             $stmt = $pdo->query("
-                SELECT COUNT(*) as count FROM alerts
+                SELECT COUNT(*) as count FROM active
                 WHERE datetime(expires) < datetime('now')
             ");
             $result = $stmt->fetch();
@@ -426,7 +426,7 @@ class Database
             
             // Delete archived alerts from main table
             $pdo->exec("
-                DELETE FROM alerts
+                DELETE FROM active
                 WHERE datetime(expires) < datetime('now')
             ");
             
