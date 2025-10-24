@@ -1,0 +1,69 @@
+services:
+  # Main alerts service
+  alerts:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: alerts-app
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./.env:/app/.env
+    environment:
+      - APP_ENV=${APP_ENV:-development}
+      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+      - FETCH_INTERVAL=${FETCH_INTERVAL:-300}
+      - VACUUM_INTERVAL_DAYS=${VACUUM_INTERVAL_DAYS:-7}
+      - ARCHIVE_RETENTION_DAYS=${ARCHIVE_RETENTION_DAYS:-30}
+    restart: unless-stopped
+    depends_on:
+      - dozzle
+    networks:
+      - alerts-network
+    # Run the scheduler which handles fetching, archiving, and maintenance
+    command: php src/scheduler.php
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # SQLite Browser service
+  sqlitebrowser:
+    image: lscr.io/linuxserver/sqlitebrowser:latest
+    container_name: alerts-sqlitebrowser
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=${TZ:-America/New_York}
+    volumes:
+      - ./data:/config
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    networks:
+      - alerts-network
+
+  # Dozzle logging service
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: alerts-dozzle
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    networks:
+      - alerts-network
+    environment:
+      - DOZZLE_LEVEL=info
+      - DOZZLE_TAILSIZE=300
+      - DOZZLE_FILTER=name=alerts
+
+networks:
+  alerts-network:
+    driver: bridge
+
+volumes:
+  data:
+  logs:
