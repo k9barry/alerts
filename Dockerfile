@@ -31,4 +31,4 @@ RUN mkdir -p /app/data /app/logs && \
 ENV APP_ENV=production
 
 # Default command (can be overridden in docker-compose)
-CMD ["php", "src/app.php"]
+CMD ["php", "src/scheduler.php"]
