@@ -9,16 +9,6 @@ use Alerts\LoggerFactory;
 // Load configuration
 $config = require __DIR__ . '/../config/config.php';
 
-// Create logger
-$logger = LoggerFactory::create(
-    $config['app']['name'],
-    $config['logging']['level'],
-    $config['logging']['path']
-);
-
-$logger->info("Starting alerts application v{$config['app']['version']}");
-$logger->info("Environment: {$config['app']['env']}");
-
 try {
     // Initialize database
     $database = new Database(
