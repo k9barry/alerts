@@ -6,6 +6,7 @@ use Monolog\Logger;
 use Monolog\Handler\StreamHandler;
 use Monolog\Handler\ErrorLogHandler;
 use Monolog\Formatter\LineFormatter;
+use Monolog\Processor\IntrospectionProcessor;
 
 /**
  * Logger Factory
@@ -58,6 +59,9 @@ class LoggerFactory
         $errorLogHandler->setFormatter($formatter);
         $logger->pushHandler($errorLogHandler);
         
+        // Add the IntrospectionProcessor
+        $logger->pushProcessor(new IntrospectionProcessor());
+
         return $logger;
     }
 }
