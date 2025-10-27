@@ -5,7 +5,6 @@ services:
     container_name: alerts
     env_file:
       - .env
-      - .env.example
     environment:
       - DB_PATH=/data/alerts.sqlite
     volumes:
