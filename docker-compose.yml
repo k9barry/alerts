@@ -3,17 +3,11 @@ services:
   alerts:
     build: .
     container_name: alerts
+    env_file:
+      - .env
+      - .env.example
     environment:
-      - APP_NAME=alerts
-      - APP_VERSION=0.1.0
-      - APP_CONTACT_EMAIL=you@example.com
-      - POLL_MINUTES=3
-      - API_RATE_PER_MINUTE=4
-      - PUSHOVER_RATE_SECONDS=2
-      - VACUUM_HOURS=24
       - DB_PATH=/data/alerts.sqlite
-      - LOG_CHANNEL=stdout
-      - LOG_LEVEL=info
     volumes:
       - ./data:/data
       - ./logs:/logs

@@ -20,6 +20,9 @@ final class Config
     public static string $pushoverApiUrl;
     public static string $weatherApiUrl;
 
+    public static string $pushoverUser;
+    public static string $pushoverToken;
+
     public static function initFromEnv(): void
     {
         self::$appName = getenv('APP_NAME') ?: 'alerts';
@@ -38,5 +41,8 @@ final class Config
 
         self::$pushoverApiUrl = getenv('PUSHOVER_API_URL') ?: 'https://api.pushover.net/1/messages.json';
         self::$weatherApiUrl = getenv('WEATHER_API_URL') ?: 'https://api.weather.gov/alerts/active';
+
+        self::$pushoverUser = getenv('PUSHOVER_USER') ?: (getenv('PUSHOVER_USER_EXAMPLE') ?: 'u-example');
+        self::$pushoverToken = getenv('PUSHOVER_TOKEN') ?: (getenv('PUSHOVER_TOKEN_EXAMPLE') ?: 't-example');
     }
 }

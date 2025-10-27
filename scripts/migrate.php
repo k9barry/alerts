@@ -25,24 +25,6 @@ if (!is_writable($dir)) {
 $pdo = Connection::get();
 
 $pdo->exec(<<<SQL
-CREATE TABLE IF NOT EXISTS user_data (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  first_name TEXT NOT NULL,
-  last_name TEXT NOT NULL,
-  email TEXT NOT NULL,
-  pushover_token TEXT NOT NULL,
-  pushover_user TEXT NOT NULL,
-  same_array TEXT NOT NULL, -- JSON array
-  ugc_array TEXT NOT NULL,  -- JSON array
-  latitude REAL,
-  longitude REAL,
-  alert_location TEXT,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-SQL);
-
-$pdo->exec(<<<SQL
 CREATE TABLE IF NOT EXISTS incoming_alerts (
   id TEXT PRIMARY KEY, -- id from API
   json TEXT NOT NULL,
@@ -90,7 +72,7 @@ $tables = $pdo->query(
     "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
 )->fetchAll(PDO::FETCH_COLUMN);
 
-$expected = ['active_alerts','incoming_alerts','pending_alerts','sent_alerts','user_data'];
+$expected = ['active_alerts','incoming_alerts','pending_alerts','sent_alerts'];
 $missing = array_values(array_diff($expected, $tables));
 $unexpected = array_values(array_diff($tables, $expected));
 

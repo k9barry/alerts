@@ -30,14 +30,14 @@ final class PushoverNotifier
         $this->lastSentAt = microtime(true);
     }
 
-    public function notifyUser(string $alertId, string $json, array $user): void
+    public function notify(string $alertId, string $json): void
     {
         $payload = json_decode($json, true) ?: [];
         $title = $payload['properties']['headline'] ?? 'Weather Alert';
         $message = $payload['properties']['description'] ?? ($payload['properties']['event'] ?? 'Alert');
         $body = [
-            'token' => $user['pushover_token'],
-            'user' => $user['pushover_user'],
+            'token' => Config::$pushoverToken,
+            'user' => Config::$pushoverUser,
             'title' => $title,
             'message' => substr($message, 0, 1024),
             'priority' => 0,
@@ -61,14 +61,13 @@ final class PushoverNotifier
         $status = $ok ? 'success' : 'failure';
         LoggerFactory::get()->info('Pushover send result', [
             'alert_id' => $alertId,
-            'user_id' => $user['id'] ?? null,
             'status' => $status,
             'attempts' => $attempts,
             'error' => $error,
         ]);
 
         // persist sent record
-        $this->recordSent($alertId, $user['id'] ?? null, $json, $status, $attempts, $ok ? null : $error);
+        $this->recordSent($alertId, null, $json, $status, $attempts, $ok ? null : $error);
     }
 
     private function recordSent(string $alertId, ?int $userId, string $json, string $status, int $attempts, ?string $error): void
