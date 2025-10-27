@@ -4,7 +4,7 @@ FROM php:8.3-cli
 # Install deps and extensions
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        git unzip libsqlite3-dev supervisor \
+        git unzip libsqlite3-dev supervisor dos2unix \
     && docker-php-ext-install pdo pdo_sqlite \
     && rm -rf /var/lib/apt/lists/*
 
@@ -25,7 +25,7 @@ COPY docker/supervisord.conf /etc/supervisor/conf.d/alerts.conf
 
 # Entrypoint to run migrations before starting the main process
 COPY docker/entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+RUN dos2unix /usr/local/bin/docker-entrypoint.sh && chmod +x /usr/local/bin/docker-entrypoint.sh
 
 ENV PHP_CLI_SERVER_WORKERS=4
 

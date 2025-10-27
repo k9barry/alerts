@@ -30,6 +30,10 @@ docker compose up --build -d
 - SQLiteBrowser: container exposes files under /data (mounted from ./data)
 
 ## Development
+- Configure git for LF line endings (prevents CRLF issues)
+```sh
+git config core.autocrlf input
+```
 - Install dependencies
 ```sh
 docker run --rm -v "$PWD":/app -w /app composer:2 install

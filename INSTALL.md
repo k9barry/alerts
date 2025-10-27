@@ -33,3 +33,29 @@ docker compose up --build -d
 - Ensure ports 8080 and 9999 are free
 - Check Dozzle for structured logs
 - Validate .env values
+
+### Line Ending Issues
+If you encounter errors like `env: 'bash\r': No such file or directory`, this indicates CRLF line ending issues:
+
+**For developers on Windows:**
+```sh
+# Configure git to checkout with LF endings
+git config --global core.autocrlf input
+```
+
+**For developers on macOS/Linux:**
+```sh
+# Configure git to use LF endings
+git config --global core.autocrlf input
+```
+
+**To fix existing files with CRLF:**
+```sh
+# Convert shell scripts to LF
+dos2unix docker/entrypoint.sh
+
+# Or using sed
+sed -i 's/\r$//' docker/entrypoint.sh
+```
+
+The repository includes a `.gitattributes` file that enforces LF line endings for shell scripts and text files. The Docker build process also includes `dos2unix` to ensure correct line endings at build time.
