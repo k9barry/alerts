@@ -13,12 +13,12 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /app
 
-# Copy and install deps
-COPY composer.json /app/
-RUN composer install --no-dev --no-interaction --prefer-dist
-
-# Copy app
+# Copy app sources before install so composer scripts can run
+COPY composer.json composer.lock* /app/
 COPY . /app
+
+# Install PHP dependencies
+RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 
 # Supervisor config
 COPY docker/supervisord.conf /etc/supervisor/conf.d/alerts.conf
