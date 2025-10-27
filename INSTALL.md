@@ -1,4 +1,9 @@
-# Installation
+# Install
+
+Supervisor has been removed. The scheduler now runs locally without Supervisor.
+
+- Local: php scripts/scheduler.php
+- Docker: docker compose up --build -dation
 
 ## Requirements
 - Docker and Docker Compose
@@ -10,7 +15,18 @@
 ```sh
 cp .env.example .env
 ```
-3. Build and start stack
+
+3. (Optional) Configure local CA bundle for SSL
+    - Download cacert.pem from https://curl.se/ca/cacert.pem
+    - Save it to certs/cacert.pem (create the certs/ directory if needed)
+    - Add to .env:
+
+```
+SSL_CERT_FILE=certs/cacert.pem
+CURL_CA_BUNDLE=certs/cacert.pem
+```
+
+4. Build and start stack
 ```sh
 docker compose up --build -d
 ```

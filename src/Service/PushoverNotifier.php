@@ -30,20 +30,30 @@ final class PushoverNotifier
         $this->lastSentAt = microtime(true);
     }
 
-    public function notify(string $alertId, string $json): void
+  public function notifyDetailed(array $alertRow): array
     {
-        $payload = json_decode($json, true) ?: [];
-        $title = $payload['properties']['headline'] ?? 'Weather Alert';
-        $message = $payload['properties']['description'] ?? ($payload['properties']['event'] ?? 'Alert');
+      $props = json_decode($alertRow['json'] ?? '{}', true)['properties'] ?? [];
+      $title = $this->buildTitle($props, $alertRow);
+      $message = $this->buildMessage($props, $alertRow);
+
         $body = [
             'token' => Config::$pushoverToken,
             'user' => Config::$pushoverUser,
-            'title' => $title,
+          'title' => substr($title, 0, 250),
             'message' => substr($message, 0, 1024),
             'priority' => 0,
         ];
+      // Add link to NWS alert page if id is a URL
+      $idUrl = $alertRow['id'] ?? null;
+      if (is_string($idUrl) && preg_match('#^https?://#i', $idUrl)) {
+        $body['url'] = $idUrl;
+        $body['url_title'] = 'Details';
+      }
 
-        $attempts = 0; $ok = false; $error = null;
+      $attempts = 0;
+      $ok = false;
+      $error = null;
+      $requestId = null;
         while ($attempts < 3 && !$ok) {
             $attempts++;
             $this->pace();
@@ -51,7 +61,14 @@ final class PushoverNotifier
                 $resp = $this->client->post(Config::$pushoverApiUrl, ['form_params' => $body]);
                 $ok = $resp->getStatusCode() === 200;
                 if (!$ok) {
-                    $error = 'HTTP ' . $resp->getStatusCode();
+                  $statusCode = $resp->getStatusCode();
+                  $respBody = (string)$resp->getBody();
+                  $respJson = json_decode($respBody, true) ?: [];
+                  $apiErrors = $respJson['errors'] ?? null;
+                  $error = 'HTTP ' . $statusCode . ($apiErrors ? (' - ' . implode('; ', (array)$apiErrors)) : '');
+                } else {
+                  $respJson = json_decode((string)$resp->getBody(), true) ?: [];
+                  $requestId = $respJson['request'] ?? null;
                 }
             } catch (GuzzleException $e) {
                 $error = $e->getMessage();
@@ -60,27 +77,58 @@ final class PushoverNotifier
 
         $status = $ok ? 'success' : 'failure';
         LoggerFactory::get()->info('Pushover send result', [
-            'alert_id' => $alertId,
+          'alert_id' => $alertRow['id'] ?? null,
             'status' => $status,
             'attempts' => $attempts,
             'error' => $error,
         ]);
 
-        // persist sent record
-        $this->recordSent($alertId, null, $json, $status, $attempts, $ok ? null : $error);
+      return [
+        'status' => $status,
+        'attempts' => $attempts,
+        'error' => $error,
+        'request_id' => $requestId,
+      ];
     }
 
-    private function recordSent(string $alertId, ?int $userId, string $json, string $status, int $attempts, ?string $error): void
+  private function buildTitle(array $props, array $row): string
+  {
+    $event = $props['event'] ?? ($row['event'] ?? 'Weather Alert');
+    $headline = $props['headline'] ?? ($row['headline'] ?? $event);
+    return sprintf('[%s] %s', strtoupper((string)$event), (string)$headline);
+    }
+
+  private function buildMessage(array $props, array $row): string
     {
-        $db = \App\DB\Connection::get();
-        $stmt = $db->prepare('INSERT INTO sent_alerts (alert_id, user_id, json, send_status, send_attempts, sent_at, error_message) VALUES (:alert_id, :user_id, :json, :status, :attempts, CURRENT_TIMESTAMP, :error)');
-        $stmt->execute([
-            ':alert_id' => $alertId,
-            ':user_id' => $userId,
-            ':json' => $json,
-            ':status' => $status,
-            ':attempts' => $attempts,
-            ':error' => $error,
-        ]);
+      $fields = [
+        'Msg' => $props['messageType'] ?? ($row['msg_type'] ?? null),
+        'Status' => $props['status'] ?? ($row['status'] ?? null),
+        'Category' => $props['category'] ?? ($row['category'] ?? null),
+        'Severity' => $props['severity'] ?? ($row['severity'] ?? null),
+        'Certainty' => $props['certainty'] ?? ($row['certainty'] ?? null),
+        'Urgency' => $props['urgency'] ?? ($row['urgency'] ?? null),
+        'Area' => $props['areaDesc'] ?? ($row['area_desc'] ?? null),
+        'Effective' => $props['effective'] ?? ($row['effective'] ?? null),
+        'Expires' => $props['expires'] ?? ($row['expires'] ?? null),
+      ];
+      $lines = [];
+      $lines[] = sprintf('S/C/U: %s/%s/%s', $fields['Severity'] ?? '-', $fields['Certainty'] ?? '-', $fields['Urgency'] ?? '-');
+      $lines[] = sprintf('Status/Msg/Cat: %s/%s/%s', $fields['Status'] ?? '-', $fields['Msg'] ?? '-', $fields['Category'] ?? '-');
+      $lines[] = sprintf('Area: %s', $fields['Area'] ?? '-');
+      $lines[] = sprintf('Time: %s → %s', $fields['Effective'] ?? '-', $fields['Expires'] ?? '-');
+
+      $desc = $props['description'] ?? ($row['description'] ?? null);
+      if ($desc) {
+        $lines[] = '';
+        $lines[] = (string)$desc;
+      }
+
+      $instr = $props['instruction'] ?? ($row['instruction'] ?? null);
+      if ($instr) {
+        $lines[] = '';
+        $lines[] = 'Instruction: ' . (string)$instr;
+      }
+
+      return implode("\n", array_filter($lines, fn($l) => $l !== null));
     }
 }

@@ -7,5 +7,5 @@ cd /app
 echo "Running database migrations..."
 php scripts/migrate.php
 
-echo "Starting main process: $*"
+echo "Starting scheduler..."
 exec "$@"

@@ -24,48 +24,68 @@ if (!is_writable($dir)) {
 
 $pdo = Connection::get();
 
-$pdo->exec(<<<SQL
-CREATE TABLE IF NOT EXISTS incoming_alerts (
-  id TEXT PRIMARY KEY, -- id from API
-  json TEXT NOT NULL,
-  same_array TEXT NOT NULL,
-  ugc_array TEXT NOT NULL,
-  received_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-SQL);
+// Unified alert schema columns matching weather.gov properties (plus arrays and json)
+$alertColumns = [
+  "id TEXT PRIMARY KEY", // API id
+  "type TEXT",
+  "status TEXT",
+  "msg_type TEXT",
+  "category TEXT",
+  "severity TEXT",
+  "certainty TEXT",
+  "urgency TEXT",
+  "event TEXT",
+  "headline TEXT",
+  "description TEXT",
+  "instruction TEXT",
+  "area_desc TEXT",
+  "sent TEXT",
+  "effective TEXT",
+  "onset TEXT",
+  "expires TEXT",
+  "ends TEXT",
+  "same_array TEXT NOT NULL",
+  "ugc_array TEXT NOT NULL",
+  "json TEXT NOT NULL"
+];
 
-$pdo->exec(<<<SQL
-CREATE TABLE IF NOT EXISTS active_alerts (
-  id TEXT PRIMARY KEY,
-  json TEXT NOT NULL,
-  same_array TEXT NOT NULL,
-  ugc_array TEXT NOT NULL,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-SQL);
+$tablesToEnsure = [
+  'incoming_alerts' => 'received_at TEXT DEFAULT CURRENT_TIMESTAMP',
+  'active_alerts' => 'updated_at TEXT DEFAULT CURRENT_TIMESTAMP',
+  'pending_alerts' => 'created_at TEXT DEFAULT CURRENT_TIMESTAMP',
+  'sent_alerts' => 'notified_at TEXT, result_status TEXT, result_attempts INTEGER NOT NULL DEFAULT 0, result_error TEXT, pushover_request_id TEXT, user_id INTEGER'
+];
 
-$pdo->exec(<<<SQL
-CREATE TABLE IF NOT EXISTS pending_alerts (
-  id TEXT PRIMARY KEY,
-  json TEXT NOT NULL,
-  same_array TEXT NOT NULL,
-  ugc_array TEXT NOT NULL,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-SQL);
+// Helper to create table with full schema if not exists
+$createTable = function (PDO $pdo, string $table, string $extraCols) use ($alertColumns) {
+  $all = implode(",\n  ", array_merge($alertColumns, array_filter([$extraCols])));
+  $sql = "CREATE TABLE IF NOT EXISTS {$table} (\n  {$all}\n);";
+  $pdo->exec($sql);
+};
 
-$pdo->exec(<<<SQL
-CREATE TABLE IF NOT EXISTS sent_alerts (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  alert_id TEXT NOT NULL,
-  user_id INTEGER,
-  json TEXT NOT NULL,
-  send_status TEXT NOT NULL,
-  send_attempts INTEGER NOT NULL DEFAULT 0,
-  sent_at TEXT,
-  error_message TEXT
-);
-SQL);
+// Helper to add column if not exists (SQLite)
+$ensureColumn = function (PDO $pdo, string $table, string $colDef) {
+  [$colName] = explode(' ', $colDef, 2);
+  $cols = $pdo->query("PRAGMA table_info('{$table}')")->fetchAll(PDO::FETCH_ASSOC);
+  $names = array_map(fn($c) => $c['name'], $cols);
+  if (!in_array($colName, $names, true)) {
+    $pdo->exec("ALTER TABLE {$table} ADD COLUMN {$colDef}");
+  }
+};
+
+foreach ($tablesToEnsure as $table => $extra) {
+  $createTable($pdo, $table, $extra);
+  // Ensure all core columns exist
+  foreach ($alertColumns as $def) {
+    $ensureColumn($pdo, $table, $def);
+  }
+  // Ensure extra columns exist
+  foreach (array_filter(array_map('trim', explode(',', $extra))) as $extraDef) {
+    if ($extraDef !== '') {
+      $ensureColumn($pdo, $table, $extraDef);
+    }
+  }
+}
 
 // Verify and summarize created tables
 $tables = $pdo->query(

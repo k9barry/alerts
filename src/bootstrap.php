@@ -9,7 +9,8 @@ use Dotenv\Dotenv;
 
 $root = dirname(__DIR__);
 if (file_exists($root . '/.env')) {
-    Dotenv::createImmutable($root)->safeLoad();
+  // Export .env values into process environment so getenv() works
+  Dotenv::createUnsafeImmutable($root)->safeLoad();
 }
 @mkdir($root . '/data', 0777, true);
 @mkdir($root . '/logs', 0777, true);

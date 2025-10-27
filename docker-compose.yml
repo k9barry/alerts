@@ -1,4 +1,3 @@
-version: "3.8"
 services:
   alerts:
     build: .
@@ -14,7 +13,7 @@ services:
       - "8080:8080"
     depends_on:
       - dozzle
-    # Use supervisord default command from image to run both web and scheduler
+    command: [ "php", "scripts/scheduler.php" ]
 
   sqlitebrowser:
     image: lscr.io/linuxserver/sqlitebrowser:latest
@@ -24,7 +23,7 @@ services:
       - PGID=1000
       - TZ=UTC
     volumes:
-      - ./data:/config/.local/share/sqlitebrowser
+      #- ./data:/config/.local/share/sqlitebrowser
       - ./data:/data
     ports:
       - "3000:3000"

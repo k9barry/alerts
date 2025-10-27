@@ -20,6 +20,10 @@ final class AlertFetcher
     {
         $data = $this->client->fetchActive();
         $features = $data['features'] ?? [];
+      if (empty($features)) {
+        \App\Logging\LoggerFactory::get()->info('No changes from API (0 features). Skipping replace to preserve existing incoming_alerts.');
+        return 0;
+      }
         $alerts = [];
         foreach ($features as $f) {
             $id = $f['id'] ?? ($f['properties']['id'] ?? null);

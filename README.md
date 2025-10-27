@@ -15,10 +15,18 @@ A Dockerized PHP 8.3 application that polls weather.gov alerts, stores them in S
 - Monolog logging with IntrospectionProcessor; view via Dozzle
 - Docker Compose services: alerts app, SQLiteBrowser, Dozzle
 
+## Local scheduler
+
+- Run locally: php scripts/scheduler.php
+- In Docker: docker compose up --build -d (scheduler runs as the main process)
+
 ## Quick start
 1. Copy env and adjust values
 ```sh
 cp .env.example .env
+# If you need a local CA bundle to fix cURL error 60, download cacert.pem and set in .env:
+# SSL_CERT_FILE=certs/cacert.pem
+# CURL_CA_BUNDLE=certs/cacert.pem
 ```
 2. Build and start
 ```sh
