@@ -1,0 +1,25 @@
+# Enforce LF line endings for text files to prevent CRLF issues
+# This prevents the "env: 'bash\r': No such file or directory" error
+
+# Shell scripts must always use LF
+*.sh text eol=lf
+
+# PHP files should use LF
+*.php text eol=lf
+
+# Configuration files should use LF
+*.conf text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+
+# Docker files should use LF
+Dockerfile text eol=lf
+docker-compose.yml text eol=lf
+
+# Documentation should use LF
+*.md text eol=lf
+*.txt text eol=lf
+
+# Ensure specific critical files always use LF
+docker/entrypoint.sh text eol=lf
