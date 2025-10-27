@@ -23,8 +23,13 @@ RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoload
 # Supervisor config
 COPY docker/supervisord.conf /etc/supervisor/conf.d/alerts.conf
 
+# Entrypoint to run migrations before starting the main process
+COPY docker/entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 ENV PHP_CLI_SERVER_WORKERS=4
 
 EXPOSE 8080
 
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/alerts.conf"]
