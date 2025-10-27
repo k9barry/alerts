@@ -4,6 +4,23 @@ declare(strict_types=1);
 require __DIR__ . '/../src/bootstrap.php';
 
 use App\DB\Connection;
+use App\Config;
+
+// Ensure the SQLite directory exists and is writable before connecting
+$dbPath = Config::$dbPath; // Expected to be something like 'data/alerts.sqlite'
+$dir = dirname($dbPath);
+
+if (!is_dir($dir)) {
+    if (!mkdir($dir, 0775, true) && !is_dir($dir)) {
+        fwrite(STDERR, "Failed to create database directory: {$dir}\n");
+        exit(1);
+    }
+}
+
+if (!is_writable($dir)) {
+    fwrite(STDERR, "Database directory is not writable: {$dir}\n");
+    exit(1);
+}
 
 $pdo = Connection::get();
 
@@ -68,4 +85,20 @@ CREATE TABLE IF NOT EXISTS sent_alerts (
 );
 SQL);
 
+// Verify and summarize created tables
+$tables = $pdo->query(
+    "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+)->fetchAll(PDO::FETCH_COLUMN);
+
+$expected = ['active_alerts','incoming_alerts','pending_alerts','sent_alerts','user_data'];
+$missing = array_values(array_diff($expected, $tables));
+$unexpected = array_values(array_diff($tables, $expected));
+
 echo "Migrations applied\n";
+echo "Tables present (" . count($tables) . "): " . implode(', ', $tables) . "\n";
+if (!empty($missing)) {
+    fwrite(STDERR, "Missing expected tables: " . implode(', ', $missing) . "\n");
+}
+if (!empty($unexpected)) {
+    echo "Note: Additional tables found: " . implode(', ', $unexpected) . "\n";
+}
