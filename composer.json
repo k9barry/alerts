@@ -1,0 +1,30 @@
+{
+  "name": "alerts/alerts",
+  "description": "Weather alerts scheduler with SQLite, Monolog, Docker services, and CRUD GUI",
+  "type": "project",
+  "license": "MIT",
+  "require": {
+    "php": ">=8.1",
+    "guzzlehttp/guzzle": "^7.9",
+    "monolog/monolog": "^3.6",
+    "vlucas/phpdotenv": "^5.6",
+    "symfony/console": "^7.1",
+    "symfony/process": "^7.1",
+    "respect/validation": "^2.3",
+    "psr/log": "^3.0",
+    "ramsey/uuid": "^4.7"
+  },
+  "autoload": {
+    "psr-4": {
+      "App\\": "src/"
+    }
+  },
+  "scripts": {
+    "post-install-cmd": [
+      "php scripts/migrate.php"
+    ],
+    "post-update-cmd": [
+      "php scripts/migrate.php"
+    ]
+  }
+}

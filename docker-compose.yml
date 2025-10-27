@@ -1,0 +1,51 @@
+version: "3.8"
+services:
+  alerts:
+    build: .
+    container_name: alerts
+    environment:
+      - APP_NAME=alerts
+      - APP_VERSION=0.1.0
+      - APP_CONTACT_EMAIL=you@example.com
+      - POLL_MINUTES=3
+      - API_RATE_PER_MINUTE=4
+      - PUSHOVER_RATE_SECONDS=2
+      - VACUUM_HOURS=24
+      - DB_PATH=/data/alerts.sqlite
+      - LOG_CHANNEL=stdout
+      - LOG_LEVEL=info
+    volumes:
+      - ./data:/data
+      - ./logs:/logs
+    ports:
+      - "8080:8080"
+    depends_on:
+      - dozzle
+    # Use supervisord default command from image to run both web and scheduler
+
+  sqlitebrowser:
+    image: lscr.io/linuxserver/sqlitebrowser:latest
+    container_name: sqlitebrowser
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+    volumes:
+      - ./data:/config/.local/share/sqlitebrowser
+      - ./data:/data
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: dozzle
+    ports:
+      - "9999:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+
+networks:
+  default:
+    driver: bridge

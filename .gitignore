@@ -1,0 +1,24 @@
+# Dependencies
+/vendor/
+/composer.lock
+
+# Environment
+.env
+.env.local
+
+# IDE/editor
+/.idea/
+/.vscode/
+*.iml
+
+# Logs
+/logs/
+*.log
+
+# Runtime
+/tmp/
+/cache/
+
+# OS files
+.DS_Store
+Thumbs.db
