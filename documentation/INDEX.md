@@ -1,0 +1,31 @@
+# Documentation Index
+
+- Overview
+  - [Architecture](./overview/ARCHITECTURE.md)
+  - [Configuration](./overview/CONFIGURATION.md)
+  - [Database Schema](./overview/DATABASE.md)
+  - [Runtime & Scheduler](./overview/RUNTIME.md)
+- Scripts
+  - [migrate.php](./scripts/migrate.md)
+  - [scheduler.php](./scripts/scheduler.md)
+  - [oneshot_poll.php](./scripts/oneshot_poll.md)
+- Source Files
+  - [Config.php](./src/CONFIG.md)
+  - [bootstrap.php](./src/BOOTSTRAP.md)
+  - DB
+    - [Connection.php](./src/DB_CONNECTION.md)
+  - Http
+    - [RateLimiter.php](./src/HTTP_RATELIMITER.md)
+    - [WeatherClient.php](./src/HTTP_WEATHERCLIENT.md)
+  - Logging
+    - [LoggerFactory.php](./src/LOGGING_FACTORY.md)
+  - Repository
+    - [AlertsRepository.php](./src/REPOSITORY_ALERTS.md)
+  - Service
+    - [AlertFetcher.php](./src/SERVICE_ALERTFETCHER.md)
+    - [AlertProcessor.php](./src/SERVICE_ALERTPROCESSOR.md)
+    - [PushoverNotifier.php](./src/SERVICE_PUSHOVER.md)
+  - Scheduler
+    - [ConsoleApp.php](./src/SCHEDULER_CONSOLEAPP.md)
+  - Public
+    - [index.php](./src/PUBLIC_INDEX.md)
