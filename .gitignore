@@ -22,6 +22,6 @@
 # OS files
 .DS_Store
 Thumbs.db
-data/alerts.sqlite
-data/alerts.sqlite-shm
-data/alerts.sqlite-wal
+
+# Data
+/data/
