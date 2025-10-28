@@ -115,7 +115,10 @@ final class PushoverNotifier
       $lines[] = sprintf('S/C/U: %s/%s/%s', $fields['Severity'] ?? '-', $fields['Certainty'] ?? '-', $fields['Urgency'] ?? '-');
       $lines[] = sprintf('Status/Msg/Cat: %s/%s/%s', $fields['Status'] ?? '-', $fields['Msg'] ?? '-', $fields['Category'] ?? '-');
       $lines[] = sprintf('Area: %s', $fields['Area'] ?? '-');
-      $lines[] = sprintf('Time: %s → %s', $fields['Effective'] ?? '-', $fields['Expires'] ?? '-');
+      $lines[] = sprintf('Time: %s → %s',
+        $this->formatLocalTime($fields['Effective'] ?? null),
+        $this->formatLocalTime($fields['Expires'] ?? null)
+      );
 
       $desc = $props['description'] ?? ($row['description'] ?? null);
       if ($desc) {
@@ -131,4 +134,18 @@ final class PushoverNotifier
 
       return implode("\n", array_filter($lines, fn($l) => $l !== null));
     }
+
+  private function formatLocalTime($iso8601OrNull): string
+  {
+    if (!$iso8601OrNull || !is_string($iso8601OrNull)) { return '-'; }
+    try {
+      $dt = new \DateTimeImmutable($iso8601OrNull);
+      $tz = new \DateTimeZone(\App\Config::$timezone ?: 'UTC');
+      $local = $dt->setTimezone($tz);
+      // Example: 2025-01-15 14:30 (America/Indianapolis)
+      return $local->format('Y-m-d H:i') . ' (' . $tz->getName() . ')';
+    } catch (\Throwable $e) {
+      return (string)$iso8601OrNull; // fallback to raw
+    }
+  }
 }

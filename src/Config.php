@@ -32,6 +32,7 @@ final class Config
     public static string $pushoverToken;
 
   public static array $weatherAlerts = [];
+  public static string $timezone;
 
     public static function initFromEnv(): void
     {
@@ -54,6 +55,8 @@ final class Config
 
       self::$pushoverUser = (string)(self::env('PUSHOVER_USER', 'u-example'));
       self::$pushoverToken = (string)(self::env('PUSHOVER_TOKEN', 't-example'));
+
+      self::$timezone = (string)(self::env('TIMEZONE', 'America/Indianapolis'));
 
       $codes = (string)self::env('WEATHER_ALERT_CODES', '');
       if ($codes !== '') {
