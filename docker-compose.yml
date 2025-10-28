@@ -24,11 +24,8 @@ services:
       - PGID=1000
       - TZ=UTC
     volumes:
-      # If you have specific .db files outside of the config directory you want to access,
-      # you can add additional volume mounts for those specific files or directories.
-      # For example, to mount a specific database file:
-      # - ./my_databases/my_app.db:/config/my_app.db
-      - ./data/alerts.sqlite:/config/alerts.sqlite:ro
+      # Mount the full data directory read-only so the file can appear after container start
+      - ./data:/config
     ports:
       - "3000:3000"
     restart: unless-stopped

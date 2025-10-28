@@ -143,7 +143,9 @@ final class PushoverNotifier
       $tz = new \DateTimeZone(\App\Config::$timezone ?: 'UTC');
       $local = $dt->setTimezone($tz);
       // Example: 2025-01-15 14:30 (America/Indianapolis)
-      return $local->format('Y-m-d H:i') . ' (' . $tz->getName() . ')';
+      // return $local->format('Y-m-d H:i') . ' (' . $tz->getName() . ')';
+      // Example: 2025-01-15 14:30
+      return $local->format('Y-m-d H:i');
     } catch (\Throwable $e) {
       return (string)$iso8601OrNull; // fallback to raw
     }
