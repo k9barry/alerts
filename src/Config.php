@@ -31,6 +31,18 @@ final class Config
     public static string $pushoverUser;
     public static string $pushoverToken;
 
+  // Feature flags
+  public static bool $pushoverEnabled;
+  public static bool $ntfyEnabled;
+
+  // NTFY configuration
+  public static string $ntfyBaseUrl;
+  public static string $ntfyTopic;
+  public static ?string $ntfyUser;
+  public static ?string $ntfyPassword;
+  public static ?string $ntfyToken;
+  public static ?string $ntfyTitlePrefix;
+
   public static array $weatherAlerts = [];
   public static string $timezone;
 
@@ -55,6 +67,18 @@ final class Config
 
       self::$pushoverUser = (string)(self::env('PUSHOVER_USER', 'u-example'));
       self::$pushoverToken = (string)(self::env('PUSHOVER_TOKEN', 't-example'));
+
+      // Feature flags
+      self::$pushoverEnabled = filter_var(self::env('PUSHOVER_ENABLED', 'true'), FILTER_VALIDATE_BOOLEAN);
+      self::$ntfyEnabled = filter_var(self::env('NTFY_ENABLED', 'false'), FILTER_VALIDATE_BOOLEAN);
+
+      // NTFY
+      self::$ntfyBaseUrl = (string)(self::env('NTFY_BASE_URL', 'https://ntfy.sh'));
+      self::$ntfyTopic = (string)(self::env('NTFY_TOPIC', ''));
+      self::$ntfyUser = self::env('NTFY_USER') !== null ? (string)self::env('NTFY_USER') : null;
+      self::$ntfyPassword = self::env('NTFY_PASSWORD') !== null ? (string)self::env('NTFY_PASSWORD') : null;
+      self::$ntfyToken = self::env('NTFY_TOKEN') !== null ? (string)self::env('NTFY_TOKEN') : null;
+      self::$ntfyTitlePrefix = self::env('NTFY_TITLE_PREFIX') !== null ? (string)self::env('NTFY_TITLE_PREFIX') : null;
 
       self::$timezone = (string)(self::env('TIMEZONE', 'America/Indianapolis'));
 

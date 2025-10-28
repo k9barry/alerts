@@ -12,7 +12,8 @@
     "symfony/process": "^7.1",
     "respect/validation": "^2.3",
     "psr/log": "^3.0",
-    "ramsey/uuid": "^4.7"
+    "ramsey/uuid": "^4.7",
+    "verifiedjoseph/ntfy-php-library": "^4.7"
   },
   "autoload": {
     "psr-4": {

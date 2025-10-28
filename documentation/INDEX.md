@@ -5,6 +5,7 @@
   - [Configuration](./overview/CONFIGURATION.md)
   - [Database Schema](./overview/DATABASE.md)
   - [Runtime & Scheduler](./overview/RUNTIME.md)
+  - [Composer Dependencies](./src/COMPOSER_DEPENDENCIES.md)
 - Scripts
   - [migrate.php](./scripts/migrate.md)
   - [scheduler.php](./scripts/scheduler.md)
