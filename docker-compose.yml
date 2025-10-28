@@ -14,6 +14,7 @@ services:
     depends_on:
       - dozzle
     command: [ "php", "scripts/scheduler.php" ]
+    restart: unless-stopped
 
   sqlitebrowser:
     image: lscr.io/linuxserver/sqlitebrowser:latest
@@ -23,8 +24,11 @@ services:
       - PGID=1000
       - TZ=UTC
     volumes:
-      #- ./data:/config/.local/share/sqlitebrowser
-      - ./data:/data
+      # If you have specific .db files outside of the config directory you want to access,
+      # you can add additional volume mounts for those specific files or directories.
+      # For example, to mount a specific database file:
+      # - ./my_databases/my_app.db:/config/my_app.db
+      - ./data/alerts.sqlite:/config/alerts.sqlite:ro
     ports:
       - "3000:3000"
     restart: unless-stopped
