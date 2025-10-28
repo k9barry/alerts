@@ -2,15 +2,15 @@
 
 namespace App\Service;
 
-use Joseph\Ntfy\NtfyClient;
-use Joseph\Ntfy\Message;
+use VerifiedJoseph\Ntfy\Client;
+use VerifiedJoseph\Ntfy\Message;
 use Psr\Log\LoggerInterface;
 
 class NtfyNotifier
 {
   public function __construct(
     private readonly LoggerInterface $logger,
-    private readonly ?NtfyClient     $client,
+    private readonly ?Client         $client,
     private readonly bool            $enabled,
     private readonly string          $topic,
     private readonly ?string         $titlePrefix
@@ -57,7 +57,7 @@ class NtfyNotifier
     }
 
     try {
-      $this->client->publish($msg);
+      $this->client->send($msg);
       $this->logger->info('Ntfy notification sent', ['topic' => $this->topic]);
     } catch (\Throwable $e) {
       $this->logger->error('Failed to send Ntfy notification', [

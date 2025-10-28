@@ -18,11 +18,11 @@ final class AlertProcessor
 
       if (Config::$ntfyEnabled) {
         $base = rtrim(Config::$ntfyBaseUrl, '/');
-        $client = new \Joseph\Ntfy\NtfyClient($base);
+        $client = new \VerifiedJoseph\Ntfy\Client($base);
         if (Config::$ntfyToken) {
-          $client->setBearerToken(Config::$ntfyToken);
+          $client = $client->withBearerToken(Config::$ntfyToken);
         } elseif (Config::$ntfyUser && Config::$ntfyPassword) {
-          $client->setBasicAuth(Config::$ntfyUser, Config::$ntfyPassword);
+          $client = $client->withBasicAuth(Config::$ntfyUser, Config::$ntfyPassword);
         }
         $this->ntfy = new NtfyNotifier(
           \App\Logging\LoggerFactory::get(),
