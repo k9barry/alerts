@@ -13,14 +13,8 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /app
 
-# Copy app sources before install so composer scripts can run
-COPY composer.json composer.lock* /app/
-COPY . /app
-
-# Install PHP dependencies
-RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
-
-# Entrypoint to run migrations before starting the main process
+# Rely on bind-mounted project (including vendor) at runtime; no build-time composer install
+# Ensure entrypoint exists in the image
 COPY docker/entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN dos2unix /usr/local/bin/docker-entrypoint.sh && chmod +x /usr/local/bin/docker-entrypoint.sh
 

@@ -7,7 +7,10 @@ use App\Config;
 use DateTimeImmutable;
 use DateTimeZone;
 use Throwable;
-use VerifiedJoseph\Ntfy\Client;
+use Ntfy\Client;
+use Ntfy\Server;
+use Ntfy\Auth\Token as NtfyToken;
+use Ntfy\Auth\User as NtfyUser;
 use App\Service\MessageBuilderTrait;
 use App\Service\NtfyNotifier;
 
@@ -24,14 +27,16 @@ final class AlertProcessor
       $this->alerts = new AlertsRepository();
       $this->pushover = new PushoverNotifier();
 
-      if (Config::$ntfyEnabled) {
+      if (Config::$ntfyEnabled && trim((string)Config::$ntfyTopic) !== '') {
         $base = rtrim(Config::$ntfyBaseUrl, '/');
-        $client = new Client($base);
+        $server = new Server($base);
+        $auth = null;
         if (Config::$ntfyToken) {
-          $client->setToken(Config::$ntfyToken);
+          $auth = new NtfyToken(Config::$ntfyToken);
         } elseif (Config::$ntfyUser && Config::$ntfyPassword) {
-          $client->setBasicAuth(Config::$ntfyUser, Config::$ntfyPassword);
+          $auth = new NtfyUser(Config::$ntfyUser, Config::$ntfyPassword);
         }
+        $client = new Client($server, $auth);
         $this->ntfy = new NtfyNotifier(
           LoggerFactory::get(),
           $client,
@@ -39,6 +44,11 @@ final class AlertProcessor
           Config::$ntfyTopic,
           Config::$ntfyTitlePrefix
         );
+        LoggerFactory::get()->info('Ntfy configured', [
+          'ntfy_enabled' => Config::$ntfyEnabled,
+          'ntfy_topic' => Config::$ntfyTopic,
+          'ntfy_base' => Config::$ntfyBaseUrl,
+        ]);
       }
     }
 
@@ -95,11 +105,10 @@ final class AlertProcessor
             $tasks[] = function () use ($p) {
               $props = json_decode($p['json'] ?? '{}', true)['properties'] ?? [];
               $title = $this->buildTitleFromProps($props, $p);
-              $message = $this->buildMessageFromProps($props, $p);
-              $this->ntfy->send($title, $message, [
+              $headline = $props['headline'] ?? ($p['headline'] ?? 'Weather Alert');
+              $this->ntfy->send($title, (string)$headline, [
                 'priority' => 3,
                 'tags' => ['warning'],
-                'click' => is_string($p['id'] ?? null) && preg_match('#^https?://#i', (string)$p['id']) ? (string)$p['id'] : null,
               ]);
               return ['channel' => 'ntfy', 'result' => ['status' => 'sent']];
             };
