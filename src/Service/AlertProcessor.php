@@ -44,9 +44,9 @@ final class AlertProcessor
 
     public function diffAndQueue(): int
     {
-        $n = $this->alerts->queuePendingForNew();
-        LoggerFactory::get()->info('Queued new alerts into pending', ['count' => $n]);
-        return $n;
+      $queuedCount = $this->alerts->queuePendingForNew();
+      LoggerFactory::get()->info('Queued new alerts into pending', ['count' => $queuedCount]);
+      return $queuedCount;
     }
 
 
