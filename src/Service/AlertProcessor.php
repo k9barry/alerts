@@ -4,11 +4,17 @@ namespace App\Service;
 use App\Logging\LoggerFactory;
 use App\Repository\AlertsRepository;
 use App\Config;
-use App\Service\PushoverNotifier;
+use DateTimeImmutable;
+use DateTimeZone;
+use Throwable;
+use VerifiedJoseph\Ntfy\Client;
+use App\Service\MessageBuilderTrait;
 use App\Service\NtfyNotifier;
 
 final class AlertProcessor
 {
+  use MessageBuilderTrait;
+
   private AlertsRepository $alerts;
   private PushoverNotifier $pushover;
   private ?NtfyNotifier $ntfy = null;
@@ -20,14 +26,14 @@ final class AlertProcessor
 
       if (Config::$ntfyEnabled) {
         $base = rtrim(Config::$ntfyBaseUrl, '/');
-        $client = new \VerifiedJoseph\Ntfy\Client($base);
+        $client = new Client($base);
         if (Config::$ntfyToken) {
           $client->setToken(Config::$ntfyToken);
         } elseif (Config::$ntfyUser && Config::$ntfyPassword) {
           $client->setBasicAuth(Config::$ntfyUser, Config::$ntfyPassword);
         }
         $this->ntfy = new NtfyNotifier(
-          \App\Logging\LoggerFactory::get(),
+          LoggerFactory::get(),
           $client,
           true,
           Config::$ntfyTopic,
@@ -43,66 +49,8 @@ final class AlertProcessor
         return $n;
     }
 
-  private function buildTitleFromProps(array $props, array $row): string
-  {
-    $event = $props['event'] ?? ($row['event'] ?? 'Weather Alert');
-    $headline = $props['headline'] ?? ($row['headline'] ?? $event);
-    return sprintf('[%s] %s', strtoupper((string)$event), (string)$headline);
-  }
 
-  private function buildMessageFromProps(array $props, array $row): string
-  {
-    $fields = [
-      'Msg' => $props['messageType'] ?? ($row['msg_type'] ?? null),
-      'Status' => $props['status'] ?? ($row['status'] ?? null),
-      'Category' => $props['category'] ?? ($row['category'] ?? null),
-      'Severity' => $props['severity'] ?? ($row['severity'] ?? null),
-      'Certainty' => $props['certainty'] ?? ($row['certainty'] ?? null),
-      'Urgency' => $props['urgency'] ?? ($row['urgency'] ?? null),
-      'Area' => $props['areaDesc'] ?? ($row['area_desc'] ?? null),
-      'Effective' => $props['effective'] ?? ($row['effective'] ?? null),
-      'Expires' => $props['expires'] ?? ($row['expires'] ?? null),
-    ];
-    $lines = [];
-    $lines[] = sprintf('S/C/U: %s/%s/%s', $fields['Severity'] ?? '-', $fields['Certainty'] ?? '-', $fields['Urgency'] ?? '-');
-    $lines[] = sprintf('Status/Msg/Cat: %s/%s/%s', $fields['Status'] ?? '-', $fields['Msg'] ?? '-', $fields['Category'] ?? '-');
-    $lines[] = sprintf('Area: %s', $fields['Area'] ?? '-');
-    $lines[] = sprintf('Time: %s → %s',
-      $this->formatLocalTime($fields['Effective'] ?? null),
-      $this->formatLocalTime($fields['Expires'] ?? null)
-    );
-
-    $desc = $props['description'] ?? ($row['description'] ?? null);
-    if ($desc) {
-      $lines[] = '';
-      $lines[] = (string)$desc;
-    }
-
-    $instr = $props['instruction'] ?? ($row['instruction'] ?? null);
-    if ($instr) {
-      $lines[] = '';
-      $lines[] = 'Instruction: ' . (string)$instr;
-    }
-
-    return implode("\n", array_filter($lines, fn($l) => $l !== null));
-  }
-
-  private function formatLocalTime($iso8601OrNull): string
-  {
-    if (!$iso8601OrNull || !is_string($iso8601OrNull)) {
-      return '-';
-    }
-    try {
-      $dt = new \DateTimeImmutable($iso8601OrNull);
-      $tz = new \DateTimeZone(\App\Config::$timezone ?: 'UTC');
-      $local = $dt->setTimezone($tz);
-      return $local->format('Y-m-d H:i');
-    } catch (\Throwable $e) {
-      return (string)$iso8601OrNull;
-    }
-  }
-
-    public function processPending(): void
+  public function processPending(): void
     {
         $pending = $this->alerts->getPending();
       if (!$pending) {
@@ -119,7 +67,7 @@ final class AlertProcessor
           $ugc = json_decode($p['ugc_array'] ?? '[]', true) ?: [];
           $same = array_map('strtoupper', $same);
           $ugc = array_map('strtoupper', $ugc);
-          $intersects = array_intersect($codes, $same) || array_intersect($codes, $ugc);
+          $intersects = !empty(array_intersect($codes, $same)) || !empty(array_intersect($codes, $ugc));
           if ($codes && !$intersects) {
             $nonMatch[] = $p;
           } else {
@@ -163,8 +111,8 @@ final class AlertProcessor
           }
 
           $this->alerts->insertSentResult($p, ['status' => 'processed', 'channels' => $results]);
-        } catch (\Throwable $e) {
-          \App\Logging\LoggerFactory::get()->error('Failed processing pending alert', [
+        } catch (Throwable $e) {
+          LoggerFactory::get()->error('Failed processing pending alert', [
             'id' => $p['id'] ?? null,
             'error' => $e->getMessage(),
           ]);

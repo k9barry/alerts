@@ -5,9 +5,15 @@ use App\Config;
 use App\Logging\LoggerFactory;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
+use App\Service\MessageBuilderTrait;
+use DateTimeImmutable;
+use DateTimeZone;
+use Throwable;
 
 final class PushoverNotifier
 {
+  use MessageBuilderTrait;
+
     private Client $client;
     private float $lastSentAt = 0.0;
 
@@ -33,8 +39,8 @@ final class PushoverNotifier
   public function notifyDetailed(array $alertRow): array
     {
       $props = json_decode($alertRow['json'] ?? '{}', true)['properties'] ?? [];
-      $title = $this->buildTitle($props, $alertRow);
-      $message = $this->buildMessage($props, $alertRow);
+      $title = $this->buildTitleFromProps($props, $alertRow);
+      $message = $this->buildMessageFromProps($props, $alertRow);
 
         $body = [
             'token' => Config::$pushoverToken,
@@ -91,63 +97,5 @@ final class PushoverNotifier
       ];
     }
 
-  private function buildTitle(array $props, array $row): string
-  {
-    $event = $props['event'] ?? ($row['event'] ?? 'Weather Alert');
-    $headline = $props['headline'] ?? ($row['headline'] ?? $event);
-    return sprintf('[%s] %s', strtoupper((string)$event), (string)$headline);
-    }
 
-  private function buildMessage(array $props, array $row): string
-    {
-      $fields = [
-        'Msg' => $props['messageType'] ?? ($row['msg_type'] ?? null),
-        'Status' => $props['status'] ?? ($row['status'] ?? null),
-        'Category' => $props['category'] ?? ($row['category'] ?? null),
-        'Severity' => $props['severity'] ?? ($row['severity'] ?? null),
-        'Certainty' => $props['certainty'] ?? ($row['certainty'] ?? null),
-        'Urgency' => $props['urgency'] ?? ($row['urgency'] ?? null),
-        'Area' => $props['areaDesc'] ?? ($row['area_desc'] ?? null),
-        'Effective' => $props['effective'] ?? ($row['effective'] ?? null),
-        'Expires' => $props['expires'] ?? ($row['expires'] ?? null),
-      ];
-      $lines = [];
-      $lines[] = sprintf('S/C/U: %s/%s/%s', $fields['Severity'] ?? '-', $fields['Certainty'] ?? '-', $fields['Urgency'] ?? '-');
-      $lines[] = sprintf('Status/Msg/Cat: %s/%s/%s', $fields['Status'] ?? '-', $fields['Msg'] ?? '-', $fields['Category'] ?? '-');
-      $lines[] = sprintf('Area: %s', $fields['Area'] ?? '-');
-      $lines[] = sprintf('Time: %s → %s',
-        $this->formatLocalTime($fields['Effective'] ?? null),
-        $this->formatLocalTime($fields['Expires'] ?? null)
-      );
-
-      $desc = $props['description'] ?? ($row['description'] ?? null);
-      if ($desc) {
-        $lines[] = '';
-        $lines[] = (string)$desc;
-      }
-
-      $instr = $props['instruction'] ?? ($row['instruction'] ?? null);
-      if ($instr) {
-        $lines[] = '';
-        $lines[] = 'Instruction: ' . (string)$instr;
-      }
-
-      return implode("\n", array_filter($lines, fn($l) => $l !== null));
-    }
-
-  private function formatLocalTime($iso8601OrNull): string
-  {
-    if (!$iso8601OrNull || !is_string($iso8601OrNull)) { return '-'; }
-    try {
-      $dt = new \DateTimeImmutable($iso8601OrNull);
-      $tz = new \DateTimeZone(\App\Config::$timezone ?: 'UTC');
-      $local = $dt->setTimezone($tz);
-      // Example: 2025-01-15 14:30 (America/Indianapolis)
-      // return $local->format('Y-m-d H:i') . ' (' . $tz->getName() . ')';
-      // Example: 2025-01-15 14:30
-      return $local->format('Y-m-d H:i');
-    } catch (\Throwable $e) {
-      return (string)$iso8601OrNull; // fallback to raw
-    }
-  }
 }
