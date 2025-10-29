@@ -4,25 +4,27 @@ namespace App\Service;
 use App\Logging\LoggerFactory;
 use App\Repository\AlertsRepository;
 use App\Config;
+use App\Service\PushoverNotifier;
+use App\Service\NtfyNotifier;
 
 final class AlertProcessor
 {
-    private AlertsRepository $alerts;
+  private AlertsRepository $alerts;
   private PushoverNotifier $pushover;
   private ?NtfyNotifier $ntfy = null;
 
     public function __construct()
     {
-        $this->alerts = new AlertsRepository();
+      $this->alerts = new AlertsRepository();
       $this->pushover = new PushoverNotifier();
 
       if (Config::$ntfyEnabled) {
         $base = rtrim(Config::$ntfyBaseUrl, '/');
         $client = new \VerifiedJoseph\Ntfy\Client($base);
         if (Config::$ntfyToken) {
-          $client = $client->withBearerToken(Config::$ntfyToken);
+          $client->setToken(Config::$ntfyToken);
         } elseif (Config::$ntfyUser && Config::$ntfyPassword) {
-          $client = $client->withBasicAuth(Config::$ntfyUser, Config::$ntfyPassword);
+          $client->setBasicAuth(Config::$ntfyUser, Config::$ntfyPassword);
         }
         $this->ntfy = new NtfyNotifier(
           \App\Logging\LoggerFactory::get(),
