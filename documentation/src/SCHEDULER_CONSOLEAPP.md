@@ -1,15 +1,49 @@
-# src/Scheduler/ConsoleApp.php
+# Scheduler/ConsoleApp.php
 
-Purpose: Provide a Symfony Console-based CLI application to orchestrate polling and maintenance.
+Symfony Console application builder with scheduler commands.
 
-Commands:
-- poll: Single cycle (fetch -> queue -> process).
-- vacuum: Run SQLite VACUUM and log completion.
-- run-scheduler: Infinite loop; performs a cycle every POLL_MINUTES (min 60s), periodically VACUUMs every VACUUM_HOURS, and replaces active alerts with the incoming snapshot each tick.
+## Location
+`src/Scheduler/ConsoleApp.php`
 
-Error handling:
-- Each scheduler tick is wrapped with try/catch; errors are logged, and the loop continues.
+## Purpose
+Defines console commands for the application: single poll, database vacuum, and continuous scheduler.
 
-Usage:
-- $app = ConsoleApp::build(); $app->run(...)
-- Entrypoint is scripts/scheduler.php.
+## Static Method
+
+### build()
+Returns configured Symfony Console Application with three commands:
+
+#### poll
+Single poll cycle:
+- Fetch and store incoming
+- Diff and queue
+- Process pending
+- Returns SUCCESS
+
+Usage: Invoked by oneshot_poll.php
+
+#### vacuum
+Database maintenance:
+- Execute VACUUM SQL command
+- Log completion
+- Returns SUCCESS
+
+Usage: Manual maintenance or automated cleanup
+
+#### run-scheduler
+Continuous scheduler loop:
+- Infinite loop with poll cycle
+- Periodic VACUUM (every VACUUM_HOURS)
+- Sleep for POLL_MINUTES between cycles
+- Error handling (log and continue)
+- Never returns (runs until killed)
+
+Usage: Primary application mode (scheduler.php)
+
+## Commands Implementation
+Commands defined as anonymous classes extending Symfony\Component\Console\Command.
+
+## Error Handling
+run-scheduler wraps each cycle in try-catch to prevent crashes.
+
+See [RUNTIME.md](../overview/RUNTIME.md) for execution flow details.
