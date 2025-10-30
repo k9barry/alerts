@@ -13,9 +13,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set up PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@v4
         with:
-          php-version: '8.3'
+          php-version: '8.2'
           extensions: pdo_sqlite
       - name: Install composer dependencies
         run: composer install --no-interaction --prefer-dist --optimize-autoloader
