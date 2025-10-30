@@ -10,6 +10,11 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Throwable;
 
+/**
+ * Pushover notifier helper
+ *
+ * Wraps Guzzle calls to the Pushover API and provides rate limiting/pacing.
+ */
 final class PushoverNotifier
 {
   use MessageBuilderTrait;
@@ -17,9 +22,9 @@ final class PushoverNotifier
     private Client $client;
     private float $lastSentAt = 0.0;
 
-    public function __construct()
+    public function __construct(?Client $client = null)
     {
-        $this->client = new Client([
+        $this->client = $client ?? new Client([
             'timeout' => 15,
             'http_errors' => false,
         ]);
@@ -36,6 +41,12 @@ final class PushoverNotifier
         $this->lastSentAt = microtime(true);
     }
 
+  /**
+   * Send a detailed Pushover notification and return result metadata.
+   *
+   * @param array $alertRow Row from alerts table (expected keys: json, id, event, headline, etc.)
+   * @return array{status:string,attempts:int,error:string|null,request_id:string|null}
+   */
   public function notifyDetailed(array $alertRow): array
     {
       $props = json_decode($alertRow['json'] ?? '{}', true)['properties'] ?? [];

@@ -10,6 +10,15 @@ use Throwable;
 use App\Service\MessageBuilderTrait;
 use App\Service\NtfyNotifier;
 
+/**
+ * Class AlertProcessor
+ *
+ * Processes fetched alerts: diffs, queues, and sends notifications via configured notifiers.
+ *
+ * Responsibilities:
+ * - Diff fetched alerts against stored alerts and queue new ones
+ * - Process pending alerts and dispatch notifications via Pushover and ntfy
+ */
 final class AlertProcessor
 {
   use MessageBuilderTrait;
@@ -18,6 +27,10 @@ final class AlertProcessor
   private PushoverNotifier $pushover;
   private ?NtfyNotifier $ntfy = null;
 
+    /**
+     * AlertProcessor constructor.
+     * Initializes repositories and notifiers based on configuration.
+     */
     public function __construct()
     {
       $this->alerts = new AlertsRepository();
@@ -38,6 +51,11 @@ final class AlertProcessor
       }
     }
 
+    /**
+     * Diff fetched alerts and queue pending new alerts.
+     *
+     * @return int Number of queued alerts
+     */
     public function diffAndQueue(): int
     {
       $queuedCount = $this->alerts->queuePendingForNew();
@@ -46,6 +64,10 @@ final class AlertProcessor
     }
 
 
+  /**
+   * Process pending alerts and dispatch notifications.
+   * Successful or failed notifications are recorded and pending entries are removed.
+   */
   public function processPending(): void
     {
         $pending = $this->alerts->getPending();

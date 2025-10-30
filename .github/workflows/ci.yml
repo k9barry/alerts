@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v4
+        with:
+          php-version: '8.2'
+          extensions: pdo_sqlite
+      - name: Install composer dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+      - name: PHP syntax check
+        run: find . -name '*.php' -not -path './vendor/*' -print0 | xargs -0 -n1 php -l
+      - name: Run docs link checker
+        run: php scripts/check_docs_links.php
+      - name: Run unit tests
+        run: ./vendor/bin/phpunit --configuration phpunit.xml
+<?php
+
+use PHPUnit\Framework\TestCase;
+use App\Service\PushoverNotifier;
+
+class MockResponse {
+    private int $status;
+    private string $body;
+    public function __construct(int $status, string $body = '') { $this->status = $status; $this->body = $body; }
+    public function getStatusCode() { return $this->status; }
+    public function getBody() { return $this->body; }
+    public function __toString() { return $this->body; }
+}
+
+class MockClient {
+    public array $calls = [];
+    public function post($url, $opts = []) {
+        $this->calls[] = [$url, $opts];
+        return new MockResponse(200, json_encode(['request' => 'abc123']));
+    }
+}
+
+class PushoverNotifierTest extends TestCase
+{
+    public function testNotifyDetailedReturnsSuccess(): void
+    {
+        $mock = new MockClient();
+        $notifier = new PushoverNotifier($mock);
+        $row = ['json' => json_encode(['properties' => ['event' => 'e', 'headline' => 'h']]), 'id' => '1'];
+        $res = $notifier->notifyDetailed($row);
+        $this->assertEquals('success', $res['status']);
+        $this->assertEquals(1, $res['attempts']);
+    }
+}
+

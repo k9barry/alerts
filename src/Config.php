@@ -1,6 +1,11 @@
 <?php
 namespace App;
 
+/**
+ * Application configuration container
+ *
+ * Static properties populated from environment variables via Config::initFromEnv().
+ */
 final class Config
 {
   private static function env(string $key, $default = null)

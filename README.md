@@ -1,5 +1,8 @@
 # Alerts
 
+<!-- CI badge: replace OWNER/REPO with your GitHub repository path -->
+[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+
 A Dockerized PHP 8.3 application that polls weather.gov alerts, stores them in SQLite, compares and promotes alerts, notifies users via Pushover with rate limiting, and exposes a simple GUI to manage user data. Includes structured logging to Dozzle.
 
 ## Features

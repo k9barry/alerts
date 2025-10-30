@@ -6,6 +6,11 @@ use App\Logging\LoggerFactory;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 
+/**
+ * WeatherClient
+ *
+ * Fetches active alerts from the configured weather API and handles simple caching via ETag/Last-Modified.
+ */
 final class WeatherClient
 {
     private Client $client;

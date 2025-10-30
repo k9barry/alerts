@@ -9,27 +9,38 @@ use GuzzleHttp\Exception\GuzzleException;
 use RuntimeException;
 use Throwable;
 
+/**
+ * Ntfy notifier - sends notifications to a ntfy server via HTTP POST
+ *
+ * This class implements a lightweight sender using Guzzle and the ntfy HTTP headers
+ */
 class NtfyNotifier
 {
   public function __construct(
     private readonly LoggerInterface $logger,
     private readonly bool            $enabled,
     private readonly string          $topic,
-    private readonly ?string         $titlePrefix
+    private readonly ?string         $titlePrefix,
+    private readonly ?HttpClient     $httpClient = null
   )
   {
   }
 
+  /**
+   * Whether ntfy notifications are enabled and the topic is non-empty.
+   */
   public function isEnabled(): bool
   {
-    $topic = trim((string)$this->topic);
+    $topic = trim($this->topic);
     return $this->enabled && $topic !== '';
   }
 
   /**
-   * @param string $title
-   * @param string $message
-   * @param array{tags?:string[],priority?:int,click?:string,attach?:string,delay?:string} $options
+   * Send a notification to the configured ntfy topic.
+   *
+   * @param string $title Short title (max 200 chars)
+   * @param string $message Message body (max 4096 chars)
+   * @param array{tags?:string[],priority?:int,click?:string,attach?:string,delay?:string} $options Additional options mapped to ntfy headers
    */
   public function send(string $title, string $message, array $options = []): void
   {
@@ -58,7 +69,7 @@ class NtfyNotifier
         throw new RuntimeException('Empty ntfy base URL in Config');
       }
       $url = $base . '/' . rawurlencode($topic);
-      $http = new HttpClient([
+      $http = $this->httpClient ?? new HttpClient([
         'timeout' => 15,
         'http_errors' => false,
       ]);
