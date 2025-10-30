@@ -4,6 +4,11 @@ namespace App\Repository;
 use App\DB\Connection;
 use PDO;
 
+/**
+ * AlertsRepository
+ *
+ * Database access helpers for alert tables (incoming_alerts, pending_alerts, active_alerts, sent_alerts).
+ */
 final class AlertsRepository
 {
     private PDO $db;
@@ -123,7 +128,7 @@ final class AlertsRepository
               ':ugc' => $r['ugc_array'] ?? '[]',
                 ':json' => $r['json'],
             ]);
-            $count += (int)$ins->rowCount();
+            $count += $ins->rowCount();
         }
         return $count;
     }

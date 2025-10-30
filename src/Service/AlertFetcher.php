@@ -5,6 +5,12 @@ use App\Http\WeatherClient;
 use App\Logging\LoggerFactory;
 use App\Repository\AlertsRepository;
 
+/**
+ * AlertFetcher
+ *
+ * Responsible for fetching active alerts from the upstream Weather API and writing
+ * normalized incoming rows into the incoming_alerts table.
+ */
 final class AlertFetcher
 {
     private WeatherClient $client;

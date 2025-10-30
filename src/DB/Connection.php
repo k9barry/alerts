@@ -4,6 +4,11 @@ namespace App\DB;
 use App\Config;
 use PDO;
 
+/**
+ * DB Connection singleton
+ *
+ * Provides a configured PDO instance for SQLite used across the app.
+ */
 final class Connection
 {
     private static ?PDO $pdo = null;

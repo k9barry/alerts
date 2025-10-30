@@ -7,13 +7,18 @@ use App\Config;
 use DateTimeImmutable;
 use DateTimeZone;
 use Throwable;
-use Ntfy\Client;
-use Ntfy\Server;
-use Ntfy\Auth\Token as NtfyToken;
-use Ntfy\Auth\User as NtfyUser;
 use App\Service\MessageBuilderTrait;
 use App\Service\NtfyNotifier;
 
+/**
+ * Class AlertProcessor
+ *
+ * Processes fetched alerts: diffs, queues, and sends notifications via configured notifiers.
+ *
+ * Responsibilities:
+ * - Diff fetched alerts against stored alerts and queue new ones
+ * - Process pending alerts and dispatch notifications via Pushover and ntfy
+ */
 final class AlertProcessor
 {
   use MessageBuilderTrait;
@@ -22,24 +27,18 @@ final class AlertProcessor
   private PushoverNotifier $pushover;
   private ?NtfyNotifier $ntfy = null;
 
+    /**
+     * AlertProcessor constructor.
+     * Initializes repositories and notifiers based on configuration.
+     */
     public function __construct()
     {
       $this->alerts = new AlertsRepository();
       $this->pushover = new PushoverNotifier();
 
       if (Config::$ntfyEnabled && trim((string)Config::$ntfyTopic) !== '') {
-        $base = rtrim(Config::$ntfyBaseUrl, '/');
-        $server = new Server($base);
-        $auth = null;
-        if (Config::$ntfyToken) {
-          $auth = new NtfyToken(Config::$ntfyToken);
-        } elseif (Config::$ntfyUser && Config::$ntfyPassword) {
-          $auth = new NtfyUser(Config::$ntfyUser, Config::$ntfyPassword);
-        }
-        $client = new Client($server, $auth);
         $this->ntfy = new NtfyNotifier(
           LoggerFactory::get(),
-          $client,
           true,
           Config::$ntfyTopic,
           Config::$ntfyTitlePrefix
@@ -52,6 +51,11 @@ final class AlertProcessor
       }
     }
 
+    /**
+     * Diff fetched alerts and queue pending new alerts.
+     *
+     * @return int Number of queued alerts
+     */
     public function diffAndQueue(): int
     {
       $queuedCount = $this->alerts->queuePendingForNew();
@@ -60,6 +64,10 @@ final class AlertProcessor
     }
 
 
+  /**
+   * Process pending alerts and dispatch notifications.
+   * Successful or failed notifications are recorded and pending entries are removed.
+   */
   public function processPending(): void
     {
         $pending = $this->alerts->getPending();
@@ -104,11 +112,19 @@ final class AlertProcessor
           if ($this->ntfy && $this->ntfy->isEnabled()) {
             $tasks[] = function () use ($p) {
               $props = json_decode($p['json'] ?? '{}', true)['properties'] ?? [];
-              $title = $this->buildTitleFromProps($props, $p);
-              $headline = $props['headline'] ?? ($p['headline'] ?? 'Weather Alert');
-              $this->ntfy->send($title, (string)$headline, [
+              // Per new rules: title from event, message from headline, include id as clickable URL if present
+              $event = (string)($props['event'] ?? ($p['event'] ?? 'Weather Alert'));
+              $title = substr($event, 0, 200);
+              $headline = (string)($props['headline'] ?? ($p['headline'] ?? ''));
+              $click = null;
+              $idUrl = $p['id'] ?? null;
+              if (is_string($idUrl) && preg_match('#^https?://#i', $idUrl)) {
+                $click = $idUrl;
+              }
+              $this->ntfy->send($title, $headline, [
                 'priority' => 3,
                 'tags' => ['warning'],
+                'click' => $click,
               ]);
               return ['channel' => 'ntfy', 'result' => ['status' => 'sent']];
             };

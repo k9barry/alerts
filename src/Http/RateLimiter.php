@@ -1,6 +1,9 @@
 <?php
 namespace App\Http;
 
+/**
+ * Simple in-process rate limiter based on a rolling 60 second window.
+ */
 final class RateLimiter
 {
     private int $maxPerMinute;

@@ -10,6 +10,12 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
+/**
+ * ConsoleApp builder
+ *
+ * Provides the Symfony Console application and registers internal commands used by
+ * the scheduler and maintenance tasks.
+ */
 final class ConsoleApp
 {
     public static function build(): Application

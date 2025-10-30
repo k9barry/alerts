@@ -7,6 +7,11 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Throwable;
 
+/**
+ * Shared message-building helpers used by notifiers.
+ *
+ * Provides title and message assembly from alert properties and row data.
+ */
 trait MessageBuilderTrait
 {
   private function buildTitleFromProps(array $props, array $row): string

@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v4
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite
+      - name: Install composer dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+      - name: PHP syntax check
+        run: find . -name '*.php' -not -path './vendor/*' -print0 | xargs -0 -n1 php -l
+      - name: Run docs link checker
+        run: php scripts/check_docs_links.php
+      - name: Run unit tests
+        run: ./vendor/bin/phpunit --configuration phpunit.xml

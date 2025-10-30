@@ -8,6 +8,11 @@ use Monolog\Level;
 use Monolog\Logger;
 use Monolog\Processor\IntrospectionProcessor;
 
+/**
+ * LoggerFactory
+ *
+ * Initializes and exposes a Monolog logger pre-configured for the application.
+ */
 final class LoggerFactory
 {
     private static ?Logger $logger = null;
