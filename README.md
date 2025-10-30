@@ -1,9 +1,15 @@
 # Alerts
 
-<!-- CI badge: replace OWNER/REPO with your GitHub repository path -->
-[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+<!-- Badges -->
+[![CI](https://github.com/k9barry/alerts/actions/workflows/ci.yml/badge.svg)](https://github.com/k9barry/alerts/actions/workflows/ci.yml)
+[![PHP Version](https://img.shields.io/badge/php-8.3-blue.svg)](https://www.php.net/releases/8.3/)
+[![License](https://img.shields.io/github/license/k9barry/alerts)](https://github.com/k9barry/alerts/blob/main/LICENSE)
+[![Last Commit](https://img.shields.io/github/last-commit/k9barry/alerts/main)](https://github.com/k9barry/alerts/commits/main)
+[![Open Issues](https://img.shields.io/github/issues/k9barry/alerts)](https://github.com/k9barry/alerts/issues)
+[![Pull Requests](https://img.shields.io/github/issues-pr/k9barry/alerts)](https://github.com/k9barry/alerts/pulls)
+[![Latest Release](https://img.shields.io/github/v/release/k9barry/alerts?include_prereleases)](https://github.com/k9barry/alerts/releases)
 
-A Dockerized PHP 8.3 application that polls weather.gov alerts, stores them in SQLite, compares and promotes alerts, notifies users via Pushover with rate limiting, and exposes a simple GUI to manage user data. Includes structured logging to Dozzle.
+A Dockerized PHP 8.3 application that polls weather.gov alerts, stores them in SQLite, compares and promotes alerts, notifies users via Pushover with rate limiting, and exposes a simple GUI to manage [...]
 
 ## Features
 - Scheduler polls weather.gov/alerts/active every X minutes (default 3)
