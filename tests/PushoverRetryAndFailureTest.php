@@ -3,14 +3,7 @@
 use PHPUnit\Framework\TestCase;
 use App\Service\PushoverNotifier;
 
-class MockResponse {
-    private int $status;
-    private string $body;
-    public function __construct(int $status, string $body = '') { $this->status = $status; $this->body = $body; }
-    public function getStatusCode() { return $this->status; }
-    public function getBody() { return $this->body; }
-    public function __toString() { return $this->body; }
-}
+require_once __DIR__ . '/Mocks/MockResponse.php';
 
 class QueueMockClient {
     public array $responses = [];
