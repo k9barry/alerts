@@ -1,5 +1,6 @@
 <?php
 
+namespace Tests\Mocks;
 class MockResponse {
     private int $status;
     private string $body;
