@@ -19,10 +19,10 @@ final class PushoverNotifier
 {
   use MessageBuilderTrait;
 
-    private Client $client;
+    private mixed $client;
     private float $lastSentAt = 0.0;
 
-    public function __construct(?Client $client = null)
+    public function __construct(mixed $client = null)
     {
         $this->client = $client ?? new Client([
             'timeout' => 15,

@@ -21,7 +21,7 @@ class NtfyNotifier
     private readonly bool            $enabled,
     private readonly string          $topic,
     private readonly ?string         $titlePrefix,
-    private readonly ?HttpClient     $httpClient = null
+    private readonly mixed           $httpClient = null
   )
   {
   }
