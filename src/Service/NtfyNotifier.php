@@ -3,8 +3,6 @@
 namespace App\Service;
 
 use App\Config;
-use Ntfy\Client;
-use Ntfy\Message;
 use Psr\Log\LoggerInterface;
 use GuzzleHttp\Client as HttpClient;
 use GuzzleHttp\Exception\GuzzleException;
@@ -15,7 +13,6 @@ class NtfyNotifier
 {
   public function __construct(
     private readonly LoggerInterface $logger,
-    private readonly ?Client         $client,
     private readonly bool            $enabled,
     private readonly string          $topic,
     private readonly ?string         $titlePrefix
@@ -26,7 +23,7 @@ class NtfyNotifier
   public function isEnabled(): bool
   {
     $topic = trim((string)$this->topic);
-    return $this->enabled && $this->client !== null && $topic !== '';
+    return $this->enabled && $topic !== '';
   }
 
   /**
@@ -54,35 +51,7 @@ class NtfyNotifier
 
     $fullTitle = ltrim(($this->titlePrefix ?? '') . ' ' . $title);
 
-    // First attempt: use library client if provided
-    $libError = null;
-    if ($this->client instanceof Client) {
-      try {
-        $msg = new Message($topic, (string)$message);
-        $msg->title($fullTitle);
-        if (!empty($options['tags'])) {
-          $msg->tags($options['tags']);
-        }
-        if (isset($options['priority'])) {
-          $msg->priority((int)$options['priority']);
-        }
-        if (!empty($options['attach'])) {
-          $msg->attach($options['attach']);
-        }
-        if (!empty($options['delay'])) {
-          $msg->delay($options['delay']);
-        }
-        $this->client->send($msg);
-        $this->logger->info('Ntfy notification sent (library)', ['topic' => $this->topic]);
-        return;
-      } catch (Throwable $e) {
-        $libError = $e->getMessage();
-        $this->logger->warning('Ntfy library send failed, falling back to HTTP', ['error' => $libError]);
-        // fall through to HTTP fallback
-      }
-    }
-
-    // Fallback: direct HTTP POST to ntfy topic endpoint via Guzzle
+    // Direct HTTP POST to ntfy topic endpoint via Guzzle
     try {
       $base = rtrim((string)Config::$ntfyBaseUrl, '/');
       if ($base === '') {
@@ -94,25 +63,29 @@ class NtfyNotifier
         'http_errors' => false,
       ]);
 
-      $headers = ['Content-Type' => 'application/x-www-form-urlencoded'];
+      $headers = ['Content-Type' => 'text/plain; charset=utf-8'];
       if (!empty(Config::$ntfyToken)) {
         $headers['Authorization'] = 'Bearer ' . Config::$ntfyToken;
       } elseif (!empty(Config::$ntfyUser) && !empty(Config::$ntfyPassword)) {
         $headers['Authorization'] = 'Basic ' . base64_encode(Config::$ntfyUser . ':' . Config::$ntfyPassword);
       }
 
-      $form = ['message' => (string)$message, 'title' => $fullTitle];
+      // Set metadata via headers per ntfy spec
+      $headers['X-Title'] = substr($fullTitle, 0, 200);
       if (!empty($options['tags'])) {
-        $form['tags'] = implode(',', (array)$options['tags']);
+        $headers['X-Tags'] = implode(',', (array)$options['tags']);
       }
       if (isset($options['priority'])) {
-        $form['priority'] = (int)$options['priority'];
+        $headers['X-Priority'] = (string)(int)$options['priority'];
       }
-      if (!empty($options['delay'])) {
-        $form['delay'] = (string)$options['delay'];
+      if (!empty($options['click'])) {
+        $headers['X-Click'] = (string)$options['click'];
       }
 
-      $resp = $http->post($url, ['headers' => $headers, 'form_params' => $form]);
+      // Enforce ntfy length limits conservatively: message<=4096
+      $body = substr((string)$message, 0, 4096);
+
+      $resp = $http->post($url, ['headers' => $headers, 'body' => $body]);
       $status = $resp->getStatusCode();
       if ($status >= 200 && $status < 300) {
         $this->logger->info('Ntfy notification sent (http)', ['topic' => $this->topic, 'status' => $status]);
