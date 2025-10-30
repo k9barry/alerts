@@ -9,44 +9,145 @@
 [![Pull Requests](https://img.shields.io/github/issues-pr/k9barry/alerts)](https://github.com/k9barry/alerts/pulls)
 [![Latest Release](https://img.shields.io/github/v/release/k9barry/alerts?include_prereleases)](https://github.com/k9barry/alerts/releases)
 
-A Dockerized PHP 8.3 application that polls weather.gov alerts, stores them in SQLite, compares and promotes alerts, notifies users via Pushover and or NTFY with rate limiting
+A Dockerized PHP 8.3 application that monitors weather.gov alerts, stores them in SQLite, intelligently detects new alerts, and sends notifications through multiple channels (Pushover and ntfy) with intelligent rate limiting and filtering.
 
 ## Features
-- Scheduler polls weather.gov/alerts/active every X minutes (default 3)
-- API client rate limited to X calls/minute (default 4)
-- SQLite persistence: incoming_alerts, active_alerts, pending_alerts, sent_alerts, user_data (with SAME/UGC arrays)
-- JSON response parsed and stored, SAME/UGC codes persisted as arrays
-- Compare and promote to pending_alerts when new
-- Pushover and or Ntfy notifications with 1 per 2s pacing and retry 3 times
-- Replace active_alerts with incoming on each cycle
-- Periodic VACUUM (default every 24 hours)
-- Monolog logging with IntrospectionProcessor; view via Dozzle
-- Docker Compose services: alerts app, SQLiteBrowser, Dozzle
 
-## Local scheduler
+### Core Functionality
+- **Automated Polling**: Fetches active weather alerts from weather.gov/alerts/active every configurable interval (default: 3 minutes)
+- **Smart API Rate Limiting**: Rolling 60-second window rate limiter respects weather.gov API limits (default: 4 requests/minute)
+- **HTTP Caching**: ETag and Last-Modified headers reduce unnecessary data transfers
+- **Multi-Table Database Design**: SQLite database with four specialized tables:
+  - `incoming_alerts`: Snapshot of latest API fetch
+  - `active_alerts`: Currently tracked alerts
+  - `pending_alerts`: New alerts queued for notification
+  - `sent_alerts`: Historical record of dispatched notifications
+- **Intelligent Diff Detection**: Compares incoming alerts against active alerts to identify only new alerts
+- **Geographic Filtering**: Configurable SAME/UGC code filtering to receive only relevant alerts for your area
+- **Dual Notification Channels**:
+  - **Pushover**: Rich notifications with retry logic (up to 3 attempts), 2-second pacing, and clickable alert URLs
+  - **ntfy**: Open-source push notifications with custom priority, tags, and actions
+- **Structured Logging**: JSON-formatted logs via Monolog with introspection processor for debugging
+- **Automatic Database Maintenance**: Periodic VACUUM operation (default: every 24 hours)
 
-- Run locally: php scripts/scheduler.php
-- In Docker: docker compose up --build -d (scheduler runs as the main process)
+### Notification Features
+- Customizable message format with severity, certainty, urgency, and time information
+- Local timezone conversion for alert timestamps
+- Clickable URLs linking directly to NWS alert details
+- Configurable notification pacing to avoid overwhelming users
+- Comprehensive error handling with retry logic
+- Simultaneous multi-channel delivery
 
-## Quick start
-1. Copy env and adjust values
+### Docker Stack
+- **alerts**: Main application container running the scheduler
+- **sqlitebrowser**: Web-based SQLite database browser (port 3000)
+- **dozzle**: Real-time Docker log viewer (port 9999)
+
+## Quick Start
+
+### 1. Prerequisites
+- Docker and Docker Compose installed
+- Internet access for weather.gov API
+
+### 2. Configuration
+Copy the example environment file and configure it:
 ```sh
 cp .env.example .env
-# If you need a local CA bundle to fix cURL error 60, download cacert.pem and set in .env:
-# SSL_CERT_FILE=certs/cacert.pem
-# CURL_CA_BUNDLE=certs/cacert.pem
 ```
-2. Install required libraries with Composer
-```sh
-composer install
-```
-3. Build and start
+
+Edit `.env` and set at minimum:
+- `PUSHOVER_USER` and `PUSHOVER_TOKEN` (if using Pushover)
+- `NTFY_TOPIC` (if using ntfy)
+- `WEATHER_ALERT_CODES` (optional: comma-separated SAME/UGC codes to filter alerts)
+- `TIMEZONE` (your IANA timezone, e.g., "America/New_York")
+
+### 3. Start the Application
 ```sh
 docker compose up --build -d
 ```
-4. Open the GUI
-- App: http://localhost:8080
-- Dozzle: http://localhost:9999
-- SQLiteBrowser: container exposes files under /data (mounted from ./data)
 
-See INSTALL.md for full instructions.
+### 4. Access Services
+- **Logs (Dozzle)**: http://localhost:9999
+- **SQLite Browser**: http://localhost:3000
+- **Application**: http://localhost:8080 (currently returns 404 - GUI not implemented)
+
+### 5. Verify Operation
+Check the logs in Dozzle to see the scheduler fetching and processing alerts.
+
+## Local Development
+
+### Run Without Docker
+Install dependencies and run the scheduler locally:
+```sh
+composer install
+php scripts/scheduler.php
+```
+
+### One-Time Poll
+Test the system with a single poll cycle:
+```sh
+php scripts/oneshot_poll.php
+```
+
+### Database Migrations
+Run database migrations manually:
+```sh
+php scripts/migrate.php
+```
+
+## Configuration Options
+
+See `.env.example` for all available configuration options including:
+- Polling intervals
+- Rate limits
+- Notification settings
+- Database paths
+- Logging configuration
+- Geographic filters
+
+## Architecture
+
+The application follows a clean layered architecture:
+- **Config**: Centralized configuration from environment variables
+- **DB**: PDO-based SQLite connection with WAL mode
+- **Http**: Weather API client with rate limiting
+- **Logging**: Structured JSON logging with Monolog
+- **Repository**: Data access layer for alert tables
+- **Service**: Business logic for fetching, processing, and notifying
+- **Scheduler**: Console commands and continuous scheduler loop
+
+## Development
+
+See [README.DEV.md](README.DEV.md) for:
+- IDE configuration
+- Running tests
+- Development workflow
+- Troubleshooting
+
+See [INSTALL.md](INSTALL.md) for:
+- Detailed installation instructions
+- Docker configuration
+- SSL certificate setup
+- Troubleshooting
+
+See [documentation/INDEX.md](documentation/INDEX.md) for:
+- Complete architecture documentation
+- Detailed component documentation
+- Database schema
+- API references
+
+## Testing
+
+Run the test suite:
+```sh
+./vendor/bin/phpunit --no-coverage
+```
+
+Or use the lightweight test runner:
+```sh
+php scripts/run_unit_smoke.php
+```
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details.
