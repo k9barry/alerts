@@ -18,6 +18,7 @@
 # Runtime
 /tmp/
 /cache/
+.phpunit.result.cache
 
 # OS files
 .DS_Store
