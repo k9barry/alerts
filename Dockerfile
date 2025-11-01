@@ -13,10 +13,16 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /app
 
-# Rely on bind-mounted project (including vendor) at runtime; no build-time composer install
-# Ensure entrypoint exists in the image
+# Copy application files
+COPY composer.json composer.lock* ./
 COPY docker/entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN dos2unix /usr/local/bin/docker-entrypoint.sh && chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Install composer dependencies at build time
+RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader \
+    && dos2unix /usr/local/bin/docker-entrypoint.sh && chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Copy the rest of the application
+COPY . .
 
 ENV PHP_CLI_SERVER_WORKERS=4
 

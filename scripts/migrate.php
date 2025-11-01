@@ -87,12 +87,96 @@ foreach ($tablesToEnsure as $table => $extra) {
   }
 }
 
+// Create zones table
+$pdo->exec("CREATE TABLE IF NOT EXISTS zones (
+  idx INTEGER PRIMARY KEY AUTOINCREMENT,
+  STATE TEXT NOT NULL,
+  ZONE TEXT NOT NULL,
+  CWA TEXT,
+  NAME TEXT NOT NULL,
+  STATE_ZONE TEXT,
+  COUNTY TEXT,
+  FIPS TEXT,
+  TIME_ZONE TEXT,
+  FE_AREA TEXT,
+  LAT REAL,
+  LON REAL,
+  UNIQUE(STATE, ZONE)
+)");
+
+// Create indexes for zones table
+$pdo->exec("CREATE INDEX IF NOT EXISTS idx_zones_state ON zones(STATE)");
+$pdo->exec("CREATE INDEX IF NOT EXISTS idx_zones_name ON zones(NAME)");
+$pdo->exec("CREATE INDEX IF NOT EXISTS idx_zones_state_zone ON zones(STATE_ZONE)");
+
+// Create users table
+$pdo->exec("CREATE TABLE IF NOT EXISTS users (
+  idx INTEGER PRIMARY KEY AUTOINCREMENT,
+  FirstName TEXT NOT NULL,
+  LastName TEXT NOT NULL,
+  Email TEXT NOT NULL UNIQUE,
+  Timezone TEXT DEFAULT 'America/New_York',
+  PushoverUser TEXT,
+  PushoverToken TEXT,
+  NtfyUser TEXT,
+  NtfyPassword TEXT,
+  NtfyToken TEXT,
+  ZoneAlert TEXT DEFAULT '[]',
+  CreatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  UpdatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+)");
+
+// Create index for users email
+$pdo->exec("CREATE INDEX IF NOT EXISTS idx_users_email ON users(Email)");
+
+// Load zones data if file exists and table is empty
+$zonesFile = $dir . '/bp18mr25.dbx';
+if (file_exists($zonesFile)) {
+    $count = $pdo->query("SELECT COUNT(*) FROM zones")->fetchColumn();
+    if ($count == 0) {
+        echo "Loading zones data from bp18mr25.dbx...\n";
+        $lines = file($zonesFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        $header = null;
+        $loaded = 0;
+        
+        foreach ($lines as $line) {
+            $fields = explode('|', $line);
+            if ($header === null) {
+                $header = $fields;
+                continue;
+            }
+            
+            if (count($fields) >= 11) {
+                $stmt = $pdo->prepare(
+                    "INSERT OR IGNORE INTO zones (STATE, ZONE, CWA, NAME, STATE_ZONE, COUNTY, FIPS, TIME_ZONE, FE_AREA, LAT, LON) 
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                );
+                $stmt->execute([
+                    $fields[0] ?? '', // STATE
+                    $fields[1] ?? '', // ZONE
+                    $fields[2] ?? '', // CWA
+                    $fields[3] ?? '', // NAME
+                    $fields[4] ?? '', // STATE_ZONE
+                    $fields[5] ?? '', // COUNTY
+                    $fields[6] ?? '', // FIPS
+                    $fields[7] ?? '', // TIME_ZONE
+                    $fields[8] ?? '', // FE_AREA
+                    !empty($fields[9]) ? (float)$fields[9] : null, // LAT
+                    !empty($fields[10]) ? (float)$fields[10] : null  // LON
+                ]);
+                $loaded++;
+            }
+        }
+        echo "Loaded {$loaded} zone records.\n";
+    }
+}
+
 // Verify and summarize created tables
 $tables = $pdo->query(
     "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
 )->fetchAll(PDO::FETCH_COLUMN);
 
-$expected = ['active_alerts','incoming_alerts','pending_alerts','sent_alerts'];
+$expected = ['active_alerts','incoming_alerts','pending_alerts','sent_alerts','users','zones'];
 $missing = array_values(array_diff($expected, $tables));
 $unexpected = array_values(array_diff($tables, $expected));
 
