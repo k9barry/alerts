@@ -22,13 +22,5 @@
     "psr-4": {
       "App\\": "src/"
     }
-  },
-  "scripts": {
-    "post-install-cmd": [
-      "php scripts/migrate.php"
-    ],
-    "post-update-cmd": [
-      "php scripts/migrate.php"
-    ]
   }
 }

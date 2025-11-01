@@ -13,7 +13,7 @@ services:
       - "8080:8080"
     depends_on:
       - dozzle
-    command: [ "php", "scripts/scheduler.php" ]
+    command: ["php","-S","0.0.0.0:8080","-t","public"]
     restart: unless-stopped
 
   sqlitebrowser:
@@ -37,6 +37,21 @@ services:
       - "9999:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+
+  scheduler:
+    build: .
+    container_name: alerts_scheduler
+    env_file:
+      - .env
+    environment:
+      - DB_PATH=/data/alerts.sqlite
+    volumes:
+      - ./data:/data
+      - ./logs:/logs
+    depends_on:
+      - alerts
+    command: ["php", "scripts/scheduler.php"]
     restart: unless-stopped
 
 networks:
