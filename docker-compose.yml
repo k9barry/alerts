@@ -7,7 +7,6 @@ services:
     environment:
       - DB_PATH=/data/alerts.sqlite
     volumes:
-      - ./:/app
       - ./data:/data
       - ./logs:/logs
     ports:
