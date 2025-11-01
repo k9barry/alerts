@@ -17,11 +17,13 @@ A Dockerized PHP 8.3 application that monitors weather.gov alerts, stores them i
 - **Automated Polling**: Fetches active weather alerts from weather.gov/alerts/active every configurable interval (default: 3 minutes)
 - **Smart API Rate Limiting**: Rolling 60-second window rate limiter respects weather.gov API limits (default: 4 requests/minute)
 - **HTTP Caching**: ETag and Last-Modified headers reduce unnecessary data transfers
-- **Multi-Table Database Design**: SQLite database with four specialized tables:
+- **Multi-Table Database Design**: SQLite database with six specialized tables:
   - `incoming_alerts`: Snapshot of latest API fetch
   - `active_alerts`: Currently tracked alerts
   - `pending_alerts`: New alerts queued for notification
   - `sent_alerts`: Historical record of dispatched notifications
+  - `zones`: NWS weather zones with geographic information
+  - `users`: User profiles with notification preferences and zone subscriptions
 - **Intelligent Diff Detection**: Compares incoming alerts against active alerts to identify only new alerts
 - **Geographic Filtering**: Configurable SAME/UGC code filtering to receive only relevant alerts for your area
 - **Dual Notification Channels**:
@@ -38,8 +40,15 @@ A Dockerized PHP 8.3 application that monitors weather.gov alerts, stores them i
 - Comprehensive error handling with retry logic
 - Simultaneous multi-channel delivery
 
+### User Management & Zone Selection
+- **Web-Based CRUD Interface**: Manage users through a responsive web UI at http://localhost:8080
+- **Zone Subscription**: Select multiple NWS weather zones per user for targeted alerts
+- **Notification Settings**: Configure Pushover and ntfy credentials per user
+- **Automatic Backups**: User table automatically backed up on every change to `/data/users_backup_*.json`
+- **Email Validation**: Unique email addresses enforced at database level
+
 ### Docker Stack
-- **alerts**: Main application container running the scheduler
+- **alerts**: Main application container running the scheduler (port 8080)
 - **sqlitebrowser**: Web-based SQLite database browser (port 3000)
 - **dozzle**: Real-time Docker log viewer (port 9999)
 
@@ -66,12 +75,20 @@ Edit `.env` and set at minimum:
 docker compose up --build -d
 ```
 
-### 4. Access Services
+### 4. Load Weather Zones (Optional)
+Download NWS weather zones data:
+```sh
+docker exec alerts php scripts/download_zones.php
+```
+
+Or manually place the zones file in `data/bp18mr25.dbx` (see `documentation/zones-data.md` for format).
+
+### 5. Access Services
+- **User Management**: http://localhost:8080 (CRUD interface for managing users and zone subscriptions)
 - **Logs (Dozzle)**: http://localhost:9999
 - **SQLite Browser**: http://localhost:3000
-- **Application**: http://localhost:8080 (currently returns 404 - GUI not implemented)
 
-### 5. Verify Operation
+### 6. Verify Operation
 Check the logs in Dozzle to see the scheduler fetching and processing alerts.
 
 ## Local Development
