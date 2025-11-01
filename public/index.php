@@ -4,7 +4,7 @@ require __DIR__ . '/../src/bootstrap.php';
 use App\DB\Connection;
 
 $pdo = Connection::get();
-$requestUri = $_SERVER['REQUEST_URI'] ?? '/';
+$requestUri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 // Route handler
@@ -107,11 +107,14 @@ if (preg_match('#^/api/users(/(\d+))?$#', $requestUri, $matches)) {
     header('Content-Type: application/json');
     $search = $_GET['search'] ?? '';
     
+    $limit = isset($_GET['limit']) ? min((int)$_GET['limit'], 1000) : 500;
+    
     if ($search) {
-        $stmt = $pdo->prepare("SELECT * FROM zones WHERE NAME LIKE ? OR STATE LIKE ? ORDER BY STATE, NAME LIMIT 100");
-        $stmt->execute(["%{$search}%", "%{$search}%"]);
+        $stmt = $pdo->prepare("SELECT * FROM zones WHERE NAME LIKE ? OR STATE LIKE ? ORDER BY STATE, NAME LIMIT ?");
+        $stmt->execute(["%{$search}%", "%{$search}%", $limit]);
     } else {
-        $stmt = $pdo->query("SELECT * FROM zones ORDER BY STATE, NAME LIMIT 100");
+        $stmt = $pdo->prepare("SELECT * FROM zones ORDER BY STATE, NAME LIMIT ?");
+        $stmt->execute([$limit]);
     }
     
     $zones = $stmt->fetchAll();
@@ -387,18 +390,37 @@ echo 'Not Found';
 exit;
 
 function backupUsersTable($pdo) {
+    // Backup asynchronously to avoid blocking the response
+    // Check if last backup was created recently (within 1 minute) to avoid excessive backups
     $dir = dirname(\App\Config::$dbPath);
+    $backups = glob($dir . '/users_backup_*.json');
+    
+    if (!empty($backups)) {
+        usort($backups, function($a, $b) { return filemtime($b) - filemtime($a); });
+        $lastBackupTime = filemtime($backups[0]);
+        
+        // Skip backup if last one was less than 60 seconds ago
+        if (time() - $lastBackupTime < 60) {
+            return;
+        }
+    }
+    
     $backupFile = $dir . '/users_backup_' . date('Y-m-d_H-i-s') . '.json';
     
-    $users = $pdo->query("SELECT * FROM users")->fetchAll();
-    file_put_contents($backupFile, json_encode($users, JSON_PRETTY_PRINT));
-    
-    // Keep only last 10 backups
-    $backups = glob($dir . '/users_backup_*.json');
-    if (count($backups) > 10) {
-        usort($backups, function($a, $b) { return filemtime($a) - filemtime($b); });
-        foreach (array_slice($backups, 0, count($backups) - 10) as $old) {
-            unlink($old);
+    try {
+        $users = $pdo->query("SELECT * FROM users")->fetchAll();
+        file_put_contents($backupFile, json_encode($users, JSON_PRETTY_PRINT));
+        
+        // Keep only last 10 backups
+        $backups = glob($dir . '/users_backup_*.json');
+        if (count($backups) > 10) {
+            usort($backups, function($a, $b) { return filemtime($a) - filemtime($b); });
+            foreach (array_slice($backups, 0, count($backups) - 10) as $old) {
+                @unlink($old);
+            }
         }
+    } catch (\Exception $e) {
+        // Log error but don't fail the request
+        error_log("Backup failed: " . $e->getMessage());
     }
 }
