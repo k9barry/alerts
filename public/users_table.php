@@ -390,17 +390,33 @@ function renderUsers(){
         }
     } catch (e) { zoneItems = []; }
 
-    // Display only STATE and COUNTY in the table cell; show FIPS/UGC in the tooltip/full list
-    const MAX_SHOW = 5;
-    const titleAttr = (zoneItems && zoneItems.length) ? zoneItems.map(it => `${it.state} | ${it.county} | FIPS:${it.fips} | UGC:${it.ugc}`).join('\n') : (Array.isArray(za) ? JSON.stringify(za) : '0 zones');
-    let shortDisplay = '0 zones';
+    // Show count of selected zones in the table cell; keep full details in the tooltip/popup
+    const titleAttr = (zoneItems && zoneItems.length) ? zoneItems.map(it => {
+      // Normalize UGC/stateZone display. Some entries may have undefined or the string "undefined";
+      // prefer a meaningful STATE_ZONE value when available.
+      let ugcVal = (it.ugc === undefined || it.ugc === null) ? (it.stateZone || '') : it.ugc;
+      if (String(ugcVal).toLowerCase() === 'undefined') ugcVal = (it.stateZone || '');
+      const fipsVal = (it.fips === undefined || it.fips === null) ? '' : it.fips;
+      return `${it.state || ''} | ${it.county || ''} | FIPS:${fipsVal} | UGC:${ugcVal}`;
+    }).join('\n') : (Array.isArray(za) ? JSON.stringify(za) : '0 zones');
+    let count = 0;
     if (Array.isArray(zoneItems) && zoneItems.length) {
-      if (zoneItems.length > MAX_SHOW) {
-        shortDisplay = zoneItems.slice(0, MAX_SHOW).map(it => `${it.state} | ${it.county}`).join(', ') + ' …';
-      } else {
-        shortDisplay = zoneItems.map(it => `${it.state} | ${it.county}`).join(', ');
+      count = zoneItems.length;
+    } else if (Array.isArray(za)) {
+      if (za.length === 0) count = 0;
+      else if (typeof za[0] === 'object') count = za.length;
+      else {
+        // count string entries that look like STATE_ZONE (contain letters)
+        const letterCount = za.filter(x => typeof x === 'string' && /[A-Za-z]/.test(x)).length;
+        if (letterCount > 0) count = letterCount;
+        else {
+          const numericCount = za.filter(x => typeof x === 'number' || /^[0-9]+$/.test(String(x))).length;
+          if (numericCount > 0) count = numericCount;
+          else count = za.length;
+        }
       }
     }
+    const shortDisplay = `${count} zone${count === 1 ? '' : 's'}`;
 
     return `<tr>
       <td>${u.idx}</td>
@@ -766,8 +782,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const fips = (cb.dataset.fips || '').toString();
             if (stateZone) out.push(String(stateZone));
             if (fips !== undefined && fips !== '') {
-              // store FIPS as number when purely numeric for easier downstream use
-              if (/^[0-9]+$/.test(String(fips))) out.push(Number(fips)); else out.push(String(fips));
+              // always store FIPS as string to keep ZoneAlert array consistent
+              out.push(String(fips));
             }
           });
           return out;
