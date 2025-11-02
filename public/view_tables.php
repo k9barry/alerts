@@ -103,8 +103,8 @@ try {
       </nav>
 
       <div class="controls">
-        <div class="meta">Rows: <?php echo $total; ?></div>
-        <button class="btn" onclick="location.href='/users_table.php'">Back to App</button>
+  <div class="meta">Rows: <?php echo $total; ?></div>
+  <button class="btn" id="backToAppBtn">Back to App</button>
       </div>
     </header>
 
@@ -201,6 +201,10 @@ try {
       row.style.display = textOf(row).includes(term) ? '' : 'none';
     });
   }
+
+  // Back button wiring (avoid inline onclick)
+  const backBtn = document.getElementById('backToAppBtn');
+  if (backBtn) backBtn.addEventListener('click', () => { location.href = '/users_table.php'; });
 
   q.addEventListener('input', applyFilter);
   colFilter.addEventListener('change', applyFilter);
