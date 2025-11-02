@@ -204,7 +204,7 @@ final class AlertsRepository
       ':result_attempts' => $result['attempts'] ?? 0,
       ':result_error' => $result['error'] ?? null,
       ':request_id' => $result['request_id'] ?? null,
-      ':user_id' => null,
+      ':user_id' => $result['user_id'] ?? null,
     ]);
   }
 }
