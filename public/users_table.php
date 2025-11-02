@@ -28,12 +28,23 @@ if (preg_match('#^/api/users(?:/(\d+))?$#', $requestUri, $m)) {
         $data = json_decode(file_get_contents('php://input'), true) ?: [];
 
         if ($method === 'POST') {
+            // validate duplicate email before INSERT to return a friendly message
+            $email = trim($data['Email'] ?? '');
+            if ($email !== '') {
+                $check = $pdo->prepare("SELECT idx FROM users WHERE Email = ?");
+                $check->execute([$email]);
+                if ($check->fetch()) {
+                    http_response_code(400);
+                    echo json_encode(['success' => false, 'error' => 'Email already exists']);
+                    exit;
+                }
+            }
             $zoneAlert = is_array($data['ZoneAlert'] ?? null) ? json_encode($data['ZoneAlert']) : '[]';
             $stmt = $pdo->prepare("INSERT INTO users (FirstName, LastName, Email, Timezone, PushoverUser, PushoverToken, NtfyUser, NtfyPassword, NtfyToken, ZoneAlert) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $stmt->execute([
                 $data['FirstName'] ?? '',
                 $data['LastName'] ?? '',
-                $data['Email'] ?? '',
+                $email,
                 $data['Timezone'] ?? 'America/New_York',
                 $data['PushoverUser'] ?? '',
                 $data['PushoverToken'] ?? '',
@@ -48,12 +59,23 @@ if (preg_match('#^/api/users(?:/(\d+))?$#', $requestUri, $m)) {
         }
 
         if ($method === 'PUT' && $userId) {
+            // validate duplicate email before UPDATE (exclude current user)
+            $email = trim($data['Email'] ?? '');
+            if ($email !== '') {
+                $check = $pdo->prepare("SELECT idx FROM users WHERE Email = ? AND idx != ?");
+                $check->execute([$email, $userId]);
+                if ($check->fetch()) {
+                    http_response_code(400);
+                    echo json_encode(['success' => false, 'error' => 'Email already exists']);
+                    exit;
+                }
+            }
             $zoneAlert = is_array($data['ZoneAlert'] ?? null) ? json_encode($data['ZoneAlert']) : '[]';
             $stmt = $pdo->prepare("UPDATE users SET FirstName=?, LastName=?, Email=?, Timezone=?, PushoverUser=?, PushoverToken=?, NtfyUser=?, NtfyPassword=?, NtfyToken=?, ZoneAlert=?, UpdatedAt=CURRENT_TIMESTAMP WHERE idx=?");
             $stmt->execute([
                 $data['FirstName'] ?? '',
                 $data['LastName'] ?? '',
-                $data['Email'] ?? '',
+                $email,
                 $data['Timezone'] ?? 'America/New_York',
                 $data['PushoverUser'] ?? '',
                 $data['PushoverToken'] ?? '',
@@ -152,6 +174,12 @@ th{background:#f8fafc;font-weight:700}
 .small{font-size:13px;color:#6b7280}
 .actions{display:flex;gap:8px;margin-top:12px}
 </style>
+
+<!-- Safe early stubs so any inline onclick won't throw before real functions load -->
+<script>
+window.closeModal = window.closeModal || function(){ try { const m = document.getElementById('userModal'); if (m) { m.style.display = 'none'; m.setAttribute('aria-hidden','true'); } const f = document.getElementById('userForm'); if(f) f.reset(); } catch(e){} };
+window.showAddModal = window.showAddModal || function(){ try { const m = document.getElementById('userModal'); if (m) m.style.display = 'flex'; } catch(e){} };
+</script>
 </head>
 <body>
 <header class="header">
@@ -168,6 +196,22 @@ th{background:#f8fafc;font-weight:700}
   </thead>
   <tbody></tbody>
 </table>
+
+<!-- ensure closeModal is defined as a true global function before any onclick runs -->
+<script>
+function closeModal(){
+  try {
+    const m = document.getElementById('userModal');
+    if (!m) return;
+    m.style.display = 'none';
+    m.setAttribute('aria-hidden', 'true');
+    const form = document.getElementById('userForm');
+    if (form) form.reset();
+  } catch (e) { console.error('closeModal error', e); }
+}
+// also attach to window to be extra-safe for any callers that expect window.closeModal
+window.closeModal = closeModal;
+</script>
 
 <!-- modal improved: use a multi-select control for zones -->
 <div id="userModal" class="modal" aria-hidden="true">
@@ -206,7 +250,7 @@ th{background:#f8fafc;font-weight:700}
 
       <div class="actions">
         <button type="submit" class="btn btn-primary">Save</button>
-        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button id="cancelUserBtn" type="button" class="btn btn-secondary">Cancel</button>
       </div>
     </form>
   </div>
@@ -349,55 +393,21 @@ async function deleteUser(id){
   if(j.success) loadUsers(); else alert(j.error || 'Delete failed');
 }
 
-document.getElementById('userForm').addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const selected = Array.from(document.getElementById('zoneSelect').selectedOptions).map(o=>parseInt(o.value));
-  const payload = {
-    FirstName: document.getElementById('firstName').value,
-    LastName: document.getElementById('lastName').value,
-    Email: document.getElementById('email').value,
-    Timezone: document.getElementById('timezone').value,
-    PushoverUser: document.getElementById('pushoverUser').value,
-    PushoverToken: document.getElementById('pushoverToken').value,
-    NtfyUser: document.getElementById('ntfyUser').value,
-    NtfyPassword: document.getElementById('ntfyPassword').value,
-    NtfyToken: document.getElementById('ntfyToken').value,
-    ZoneAlert: selected
-  };
-  const id = document.getElementById('userId').value;
-  const url = id ? '/api/users/' + id : '/api/users';
-  const method = id ? 'PUT' : 'POST';
-  const r = await fetch(url, {
-    method,
-    credentials: 'include',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify(payload)
-  });
-  const j = await r.json();
-  if(j.success){ closeModal(); loadUsers(); } else alert(j.error || 'Save failed');
-});
-
-document.getElementById('zoneSearch').addEventListener('input', (e)=> renderZones(e.target.value));
+// Attach Cancel button handler (defensive)
 document.addEventListener('DOMContentLoaded', () => {
-    try {
-        if (typeof loadUsers === 'function' && typeof loadZones === 'function') {
-            loadUsers();
-            loadZones();
-            return;
-        }
-    } catch (e) {
-        console.error('startup check failed', e);
-    }
-
-    // Fallback: try again slightly later
-    setTimeout(() => {
-        try {
-            if (typeof loadUsers === 'function') loadUsers();
-            if (typeof loadZones === 'function') loadZones();
-        } catch (err) {
-            console.error('startup load error', err);
-        }
-    }, 100);
+  const btn = document.getElementById('cancelUserBtn');
+  if (btn) btn.addEventListener('click', (e) => { e.preventDefault(); closeModal(); });
+  // existing startup: load users/zones
+  try {
+      if (typeof loadUsers === 'function' && typeof loadZones === 'function') {
+          loadUsers();
+          loadZones();
+          return;
+      }
+  } catch (e) { console.error('startup check failed', e); }
+  setTimeout(() => {
+      try { if (typeof loadUsers === 'function') loadUsers(); if (typeof loadZones === 'function') loadZones(); } catch (err) { console.error('startup load error', err); }
+  }, 100);
 });
 </script>
 </body>
