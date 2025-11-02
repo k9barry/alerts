@@ -108,5 +108,84 @@ final class PushoverNotifier
       ];
     }
 
+    /**
+     * Send a detailed Pushover notification for a specific user record.
+     * Uses user's PushoverToken and PushoverUser when present; otherwise
+     * returns a skipped result.
+     *
+     * @param array $alertRow
+     * @param array $userRow
+     * @return array
+     */
+    public function notifyDetailedForUser(array $alertRow, array $userRow): array
+    {
+      $user = trim((string)($userRow['PushoverUser'] ?? $userRow['Pushoveruser'] ?? ''));
+      $token = trim((string)($userRow['PushoverToken'] ?? $userRow['Pushovertoken'] ?? ''));
+      if ($user === '' || $token === '') {
+        // nothing to do for this user
+        LoggerFactory::get()->info('Pushover skipped for user (missing credentials)', ['user_idx' => $userRow['idx'] ?? null]);
+        return ['status' => 'skipped', 'attempts' => 0, 'error' => 'missing credentials'];
+      }
+
+      $props = json_decode($alertRow['json'] ?? '{}', true)['properties'] ?? [];
+      $title = $this->buildTitleFromProps($props, $alertRow);
+      $message = $this->buildMessageFromProps($props, $alertRow);
+
+      $body = [
+        'token' => $token,
+        'user' => $user,
+        'title' => substr($title, 0, 250),
+        'message' => substr($message, 0, 1024),
+        'priority' => 0,
+      ];
+
+      $idUrl = $alertRow['id'] ?? null;
+      if (is_string($idUrl) && preg_match('#^https?://#i', $idUrl)) {
+        $body['url'] = $idUrl;
+        $body['url_title'] = 'Details';
+      }
+
+      $attempts = 0;
+      $ok = false;
+      $error = null;
+      $requestId = null;
+      while ($attempts < 3 && !$ok) {
+        $attempts++;
+        $this->pace();
+        try {
+          $resp = $this->client->post(Config::$pushoverApiUrl, ['form_params' => $body]);
+          $ok = $resp->getStatusCode() === 200;
+          if (!$ok) {
+            $statusCode = $resp->getStatusCode();
+            $respBody = (string)$resp->getBody();
+            $respJson = json_decode($respBody, true) ?: [];
+            $apiErrors = $respJson['errors'] ?? null;
+            $error = 'HTTP ' . $statusCode . ($apiErrors ? (' - ' . implode('; ', (array)$apiErrors)) : '');
+          } else {
+            $respJson = json_decode((string)$resp->getBody(), true) ?: [];
+            $requestId = $respJson['request'] ?? null;
+          }
+        } catch (\Throwable $e) {
+          $error = $e->getMessage();
+        }
+      }
+
+      $status = $ok ? 'success' : 'failure';
+      LoggerFactory::get()->info('Pushover send result (user)', [
+        'alert_id' => $alertRow['id'] ?? null,
+        'user_idx' => $userRow['idx'] ?? null,
+        'status' => $status,
+        'attempts' => $attempts,
+        'error' => $error,
+      ]);
+
+      return [
+        'status' => $status,
+        'attempts' => $attempts,
+        'error' => $error,
+        'request_id' => $requestId,
+      ];
+    }
+
 
 }

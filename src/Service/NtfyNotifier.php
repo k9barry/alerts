@@ -110,4 +110,79 @@ class NtfyNotifier
       $this->logger->error('Ntfy HTTP send failed (throwable)', ['error' => $e->getMessage()]);
     }
   }
+
+  /**
+   * Send a notification for a specific user using the user's ntfy credentials
+   * when present. Falls back to global Config values.
+   *
+   * @param string $title
+   * @param string $message
+   * @param array $options
+   * @param array|null $userRow
+   */
+  public function sendForUser(string $title, string $message, array $options = [], ?array $userRow = null): void
+  {
+    if (!$this->isEnabled()) {
+      $this->logger->info('Ntfy sending skipped (disabled or misconfigured)');
+      return;
+    }
+
+    $topic = trim((string)$this->topic);
+    if ($topic === '') {
+      $this->logger->error('Ntfy sending aborted: empty topic');
+      return;
+    }
+
+    $this->logger->info('Ntfy sending (per-user)', ['topic' => $topic, 'title' => $title]);
+
+    try {
+      $base = rtrim((string)Config::$ntfyBaseUrl, '/');
+      if ($base === '') {
+        throw new \RuntimeException('Empty ntfy base URL in Config');
+      }
+      $url = $base . '/' . rawurlencode($topic);
+      $http = $this->httpClient ?? new HttpClient([
+        'timeout' => 15,
+        'http_errors' => false,
+      ]);
+
+      $headers = ['Content-Type' => 'text/plain; charset=utf-8'];
+      // prefer per-user token/user:password if provided
+      if (!empty($userRow['NtfyToken'])) {
+        $headers['Authorization'] = 'Bearer ' . trim((string)$userRow['NtfyToken']);
+      } elseif (!empty($userRow['NtfyUser']) && !empty($userRow['NtfyPassword'])) {
+        $headers['Authorization'] = 'Basic ' . base64_encode(trim((string)$userRow['NtfyUser']) . ':' . trim((string)$userRow['NtfyPassword']));
+      } elseif (!empty(Config::$ntfyToken)) {
+        $headers['Authorization'] = 'Bearer ' . Config::$ntfyToken;
+      } elseif (!empty(Config::$ntfyUser) && !empty(Config::$ntfyPassword)) {
+        $headers['Authorization'] = 'Basic ' . base64_encode(Config::$ntfyUser . ':' . Config::$ntfyPassword);
+      }
+
+      $fullTitle = ltrim(($this->titlePrefix ?? '') . ' ' . $title);
+      $headers['X-Title'] = substr($fullTitle, 0, 200);
+      if (!empty($options['tags'])) {
+        $headers['X-Tags'] = implode(',', (array)$options['tags']);
+      }
+      if (isset($options['priority'])) {
+        $headers['X-Priority'] = (string)(int)$options['priority'];
+      }
+      if (!empty($options['click'])) {
+        $headers['X-Click'] = (string)$options['click'];
+      }
+
+      $body = substr((string)$message, 0, 4096);
+      $resp = $http->post($url, ['headers' => $headers, 'body' => $body]);
+      $status = $resp->getStatusCode();
+      if ($status >= 200 && $status < 300) {
+        $this->logger->info('Ntfy notification sent (user)', ['topic' => $topic, 'status' => $status, 'user_idx' => $userRow['idx'] ?? null]);
+        return;
+      }
+      $body = (string)$resp->getBody();
+      $this->logger->error('Ntfy HTTP send failed (user)', ['status' => $status, 'body' => $body, 'url' => $url]);
+    } catch (GuzzleException $ge) {
+      $this->logger->error('Ntfy HTTP send failed (exception)', ['error' => $ge->getMessage(), 'user_idx' => $userRow['idx'] ?? null]);
+    } catch (\Throwable $e) {
+      $this->logger->error('Ntfy HTTP send failed (throwable)', ['error' => $e->getMessage(), 'user_idx' => $userRow['idx'] ?? null]);
+    }
+  }
 }

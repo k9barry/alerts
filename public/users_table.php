@@ -2,6 +2,7 @@
 require __DIR__ . '/../src/bootstrap.php';
 
 use App\DB\Connection;
+use App\Service\ZoneAlertHelper;
 
 $pdo = Connection::get();
 $requestUri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
@@ -39,7 +40,8 @@ if (preg_match('#^/api/users(?:/(\d+))?$#', $requestUri, $m)) {
                     exit;
                 }
             }
-            $zoneAlert = is_array($data['ZoneAlert'] ?? null) ? json_encode($data['ZoneAlert']) : '[]';
+            // server-side normalize ZoneAlert to a consistent JSON array of strings
+            $zoneAlert = ZoneAlertHelper::normalizeForSave($data['ZoneAlert'] ?? []);
             $stmt = $pdo->prepare("INSERT INTO users (FirstName, LastName, Email, Timezone, PushoverUser, PushoverToken, NtfyUser, NtfyPassword, NtfyToken, ZoneAlert) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $stmt->execute([
                 $data['FirstName'] ?? '',
@@ -70,7 +72,8 @@ if (preg_match('#^/api/users(?:/(\d+))?$#', $requestUri, $m)) {
                     exit;
                 }
             }
-            $zoneAlert = is_array($data['ZoneAlert'] ?? null) ? json_encode($data['ZoneAlert']) : '[]';
+            // server-side normalize ZoneAlert to a consistent JSON array of strings
+            $zoneAlert = ZoneAlertHelper::normalizeForSave($data['ZoneAlert'] ?? []);
             $stmt = $pdo->prepare("UPDATE users SET FirstName=?, LastName=?, Email=?, Timezone=?, PushoverUser=?, PushoverToken=?, NtfyUser=?, NtfyPassword=?, NtfyToken=?, ZoneAlert=?, UpdatedAt=CURRENT_TIMESTAMP WHERE idx=?");
             $stmt->execute([
                 $data['FirstName'] ?? '',
