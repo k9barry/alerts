@@ -177,6 +177,14 @@ th{background:#f8fafc;font-weight:700}
 .zone-popup{position:fixed;background:#fff;border:1px solid rgba(0,0,0,.12);padding:12px;border-radius:10px;box-shadow:0 12px 36px rgba(2,6,23,.18);max-width:640px;max-height:60vh;overflow:auto;z-index:1101;font-size:14px}
 .zone-popup .copy-btn{display:inline-block;margin-top:10px;padding:8px 10px;border-radius:6px;background:#0d6efd;color:#fff;font-weight:600;cursor:pointer}
 .zone-popup-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:1100;display:none}
+.zone-list{width:100%;border:1px solid #dde6ef;border-radius:6px;background:#fff;max-height:360px;overflow:auto}
+.zone-row{display:flex;gap:8px;padding:8px;border-bottom:1px solid #f1f5f9;align-items:center}
+.zone-row > div{font-size:13px}
+.zone-row .col-state{width:16%}
+.zone-row .col-name{width:36%}
+.zone-row .col-county{width:20%}
+.zone-row .col-statezone{width:14%}
+.zone-row .col-fips{width:14%}
 </style>
 
 <!-- removed early stub functions; wiring is done via event listeners later -->
@@ -243,12 +251,18 @@ window.closeModal = closeModal;
       <div class="form-group">
         <label style="display:block;margin-bottom:8px;font-weight:600">State</label>
         <select id="zoneStateFilter" class="zone-search"><option value="">All states</option></select>
-        <label style="display:block;margin:10px 0 6px;font-weight:600">Filter zones</label>
-        <input id="zoneFilter" class="zone-search" placeholder="Filter zones (state or name)">
+  <!-- Filter zones removed per request; keep state selector only -->
         <label style="display:block;margin:10px 0 6px;font-weight:600">Alert Zones</label>
-        <!-- multi-select so user can select many zones with ctrl/shift or by clicking multiple -->
-        <select id="zoneSelect" class="select-multi" multiple size="12" aria-label="Alert zones"></select>
-        <div class="small" style="margin-top:8px">Hold Ctrl (Cmd) or Shift to select multiple, or use the filter above.</div>
+        <div style="display:flex;gap:8px;font-weight:700;font-size:13px;margin-bottom:6px;color:#374151">
+          <div style="width:16%">STATE</div>
+          <div style="width:36%">NAME</div>
+          <div style="width:20%">COUNTY</div>
+          <div style="width:14%">STATE_ZONE</div>
+          <div style="width:14%">FIPS</div>
+        </div>
+        <!-- custom multi-select list so we can show columns -->
+        <div id="zoneList" class="zone-list" role="listbox" aria-label="Alert zones"></div>
+        <div class="small" style="margin-top:8px">Use the state selector to narrow zones.</div>
       </div>
 
       <div class="actions">
@@ -261,6 +275,54 @@ window.closeModal = closeModal;
 
 <script>
 let zones = [], users = [];
+
+// Return stored ZoneAlert as array of UGC codes for a given userId (or for current form userId)
+function getStoredZoneSelections(userId){
+  try {
+    const id = userId || (document.getElementById('userId') && document.getElementById('userId').value) || '';
+    if (!id) return [];
+    const u = users.find(x => String(x.idx) === String(id));
+    if (!u) return [];
+    const rawVal = u.ZoneAlert || '[]';
+    let parsed = [];
+    try { parsed = JSON.parse(rawVal || '[]'); } catch(e){ parsed = []; }
+    if (!Array.isArray(parsed)) return [];
+    // Support several stored shapes and return an array of state_zone-like values for pre-checking
+    const out = [];
+    // If array of plain objects, try STATE_ZONE or ZONE
+    if (parsed.length && typeof parsed[0] === 'object') {
+      parsed.forEach(it => {
+        if (!it) return;
+        const sz = it.STATE_ZONE || it.STATEZONE || it.state_zone || it.STATE || it.ZONE || it.UGC || it.zone || '';
+        if (sz) out.push(String(sz));
+      });
+      return Array.from(new Set(out)).filter(Boolean);
+    }
+    // If numeric-first, map numeric values to zones by id or FIPS
+    if (parsed.length && (typeof parsed[0] === 'number' || /^[0-9]+$/.test(String(parsed[0])))) {
+      parsed.forEach(v => {
+        const found = zones.find(z => Number(z.id) === Number(v) || String((z.raw && (z.raw.FIPS||z.raw.fips||z.FIPS||''))) === String(v));
+        if (found) out.push(String(found.raw && (found.raw.STATE_ZONE||found.STATE_ZONE||found.STATEZONE) || found.ZONE || ''));
+      });
+      return Array.from(new Set(out)).filter(Boolean);
+    }
+    // String array: could be alternating [STATE_ZONE, FIPS, STATE_ZONE, FIPS] or simple [STATE_ZONE, STATE_ZONE]
+    for (let i = 0; i < parsed.length; i++) {
+      const v = parsed[i];
+      if (typeof v === 'string' && /[A-Za-z]/.test(v)) {
+        const sz = String(v);
+        out.push(sz);
+        // skip following numeric FIPS if present
+        if (i+1 < parsed.length && (/^[0-9]+$/.test(String(parsed[i+1])))) i++;
+      } else if (typeof v === 'string' && /^[0-9]+$/.test(v)) {
+        // numeric string - try to map to zone
+        const found = zones.find(z => String((z.raw && (z.raw.FIPS||z.raw.fips||z.FIPS||''))) === String(v) || String(z.id) === String(v));
+        if (found) out.push(String(found.raw && (found.raw.STATE_ZONE||found.STATE_ZONE||found.STATEZONE) || found.ZONE || ''));
+      }
+    }
+    return Array.from(new Set(out)).filter(Boolean);
+  } catch(e){ return []; }
+}
 
 // simple HTML escape for attributes/cell content
 function htmlEscape(s){
@@ -279,27 +341,65 @@ function renderUsers(){
   t.innerHTML = (users || []).map(u=>{
     let za = [];
     try { za = JSON.parse(u.ZoneAlert || '[]'); } catch(e) { za = []; }
-    // Map zone IDs to zone codes (UGC) if we have zones loaded
-    let zoneCodes = [];
+    // za may be array of ids or array of objects {FIPS, UGC}
+    let zoneItems = [];
     try {
       if (Array.isArray(za) && zones && zones.length) {
-        zoneCodes = za.map(id => {
-          const z = zones.find(x => x.id == id);
-          return z ? (z.ZONE || z.NAME || id) : id;
-        }).filter(Boolean);
-      }
-    } catch (e) { zoneCodes = []; }
+          if (za.length && typeof za[0] === 'object') {
+            // stored as objects with FIPS/UGC - map back to zone rows where possible
+            zoneItems = za.map(it => {
+              const f = String(it.FIPS || it.fips || '');
+              const u = String(it.UGC || it.ugc || it.UGS || it.ZONE || '');
+              const found = zones.find(z => (String((z.raw && (z.raw.FIPS||z.raw.fips||z.FIPS||'')) ) === f) || (String((z.ZONE||z.raw.ZONE||'')).toLowerCase() === (u||'').toLowerCase()));
+              if (found) return { state: found.STATE, county: (found.raw && (found.raw.COUNTY||found.raw.County||'') ) || '', fips: f, ugc: u };
+              return { state: '', county: '', fips: f, ugc: u };
+            });
+          } else if (za.length && typeof za[0] === 'string') {
+            // stored as array of strings. Could be simple ['UGC','UGC',..] or alternating ['UGC','FIPS','UGC','FIPS',..]
+            zoneItems = [];
+            for (let i = 0; i < za.length; i++) {
+              const cur = za[i];
+              if (typeof cur === 'string' && /[A-Za-z]/.test(cur)) {
+                const stateZoneVal = cur;
+                let fips = '';
+                if (i + 1 < za.length && (/^[0-9]+$/.test(String(za[i+1])))) {
+                  fips = String(za[i+1]);
+                  i++; // skip fips in the next iteration
+                }
+                const found = zones.find(z => {
+                  const sz = String((z.raw && (z.raw.STATE_ZONE||z.raw.STATEZONE||z.STATE_ZONE||z.STATEZONE)) || z.STATE_ZONE || '').toLowerCase();
+                  const code = String((z.ZONE || (z.raw && (z.raw.ZONE||z.raw.UGC||''))||'')).toLowerCase();
+                  return sz === stateZoneVal.toLowerCase() || code === stateZoneVal.toLowerCase() || (z.raw && String(z.raw.FIPS||z.raw.fips||'') === fips);
+                });
+                if (found) zoneItems.push({ state: found.STATE || '', county: (found.raw && (found.raw.COUNTY||found.raw.County||'')) || '', fips: fips || (found.raw && (found.raw.FIPS||found.raw.fips||'')) || '', stateZone: stateZoneVal });
+                else zoneItems.push({ state: '', county: '', fips, stateZone: stateZoneVal });
+              } else if (typeof cur === 'number' || /^[0-9]+$/.test(String(cur))) {
+                // numeric entry by itself: try to match by FIPS or id
+                const f = String(cur);
+                const found = zones.find(z => String((z.raw && (z.raw.FIPS||z.raw.fips||z.FIPS||''))) === f || String(z.id) === f);
+                if (found) zoneItems.push({ state: found.STATE || '', county: (found.raw && (found.raw.COUNTY||found.raw.County||'')) || '', fips: f, stateZone: found.raw && (found.raw.STATE_ZONE||found.STATE_ZONE||found.STATEZONE) || found.ZONE || '' });
+              }
+            }
+          } else {
+            // stored as ids
+            zoneItems = za.map(id => {
+              const z = zones.find(x => Number(x.id) === Number(id));
+              return z ? { state: z.STATE || '', county: (z.raw && (z.raw.COUNTY||z.raw.County||'')) || '', fips: (z.raw && (z.raw.FIPS||z.raw.fips||'')) || '', ugc: z.ZONE || (z.raw && (z.raw.ZONE||z.raw.UGC||'')) || '' } : null;
+            }).filter(Boolean);
+          }
+        }
+    } catch (e) { zoneItems = []; }
 
-    const zonesDisplay = (zoneCodes && zoneCodes.length) ? zoneCodes.join(', ') : (Array.isArray(za) ? za.length + ' zones' : '0 zones');
-    // short display with tooltip for long lists
+    // Display only STATE and COUNTY in the table cell; show FIPS/UGC in the tooltip/full list
     const MAX_SHOW = 5;
-    let shortDisplay = zonesDisplay;
-    let titleAttr = '';
-    if (Array.isArray(zoneCodes) && zoneCodes.length > MAX_SHOW) {
-      shortDisplay = zoneCodes.slice(0, MAX_SHOW).join(', ') + ' …';
-      titleAttr = zoneCodes.join(', ');
-    } else {
-      titleAttr = zonesDisplay;
+    const titleAttr = (zoneItems && zoneItems.length) ? zoneItems.map(it => `${it.state} | ${it.county} | FIPS:${it.fips} | UGC:${it.ugc}`).join('\n') : (Array.isArray(za) ? JSON.stringify(za) : '0 zones');
+    let shortDisplay = '0 zones';
+    if (Array.isArray(zoneItems) && zoneItems.length) {
+      if (zoneItems.length > MAX_SHOW) {
+        shortDisplay = zoneItems.slice(0, MAX_SHOW).map(it => `${it.state} | ${it.county}`).join(', ') + ' …';
+      } else {
+        shortDisplay = zoneItems.map(it => `${it.state} | ${it.county}`).join(', ');
+      }
     }
 
     return `<tr>
@@ -316,37 +416,35 @@ function renderUsers(){
   }).join('');
 }
 
-// Render zones into the multi-select (supports normalized zone objects)
-function renderZones(q='', stateFilter=''){
-  const sel = document.getElementById('zoneSelect');
-  if (!sel) return;
-  const query = (q || '').toLowerCase().trim();
+// Render zones into the custom list view with columns
+function renderZones(stateFilter=''){
+  const list = document.getElementById('zoneList');
+  if (!list) return;
   const stateQ = (stateFilter || document.getElementById('zoneStateFilter')?.value || '').toLowerCase().trim();
   const filtered = (zones || []).filter(z => {
-    const name = (z.NAME||'').toLowerCase();
     const state = (z.STATE||'').toLowerCase();
-    const matchQuery = !query || name.includes(query) || state.includes(query) || (z.ZONE||'').toLowerCase().includes(query);
     const matchState = !stateQ || state === stateQ;
-    return matchQuery && matchState;
+    return matchState;
   });
 
-  const currentSel = (document.getElementById('userId') && document.getElementById('userId').value)
-    ? (JSON.parse((users.find(u=>u.idx==document.getElementById('userId').value)||{}).ZoneAlert||'[]').map(v=>parseInt(v,10)))
-    : [];
+  const storedSelections = getStoredZoneSelections();
 
-  sel.innerHTML = (filtered || []).map(z => {
+  list.innerHTML = (filtered || []).map(z => {
     const id = z.id ?? z.idx ?? z.ID ?? z.IDX ?? 0;
-    const selected = currentSel.includes(Number(id)) ? 'selected' : '';
-    // Build an option label that includes all fields from the raw zone object for clarity
-    let label = ' ';
-    try {
-      if (z.raw && typeof z.raw === 'object') {
-        label = Object.entries(z.raw).map(([k,v]) => `${k}:${v}`).join(' | ');
-      } else {
-        label = `${(z.STATE||'').trim()} - ${(z.NAME||'').trim()}${z.ZONE ? ' ('+z.ZONE+')' : ''}`;
-      }
-    } catch (e) { label = `${(z.STATE||'').trim()} - ${(z.NAME||'').trim()}`; }
-    return `<option value="${id}" ${selected}>${label}</option>`;
+    const code = (z.ZONE || (z.raw && (z.raw.ZONE||z.raw.UGC||'')) || '').toString();
+    const county = (z.raw && (z.raw.COUNTY || z.raw.County || '')) || '';
+    const stateZone = (z.raw && (z.raw.STATE_ZONE || z.raw.STATEZONE || z.raw.STATE_ZONE_ID || z.STATE_ZONE || z.ZONE)) || '';
+    const fips = (z.raw && (z.raw.FIPS || z.raw.fips || z.FIPS || '')) || '';
+    const checked = ((stateZone && storedSelections.includes(String(stateZone))) || storedSelections.includes(String(code))) ? 'checked' : '';
+    return `
+      <div class="zone-row" role="option" data-id="${id}" data-statezone="${htmlEscape(stateZone)}" data-ugc="${htmlEscape(code)}" data-fips="${htmlEscape(fips)}">
+        <div style="width:4%"><input type="checkbox" class="zone-checkbox" value="${id}" data-statezone="${htmlEscape(stateZone)}" data-ugc="${htmlEscape(code)}" data-fips="${htmlEscape(fips)}" ${checked}></div>
+        <div class="col-state">${htmlEscape(z.STATE||'')}</div>
+        <div class="col-name">${htmlEscape(z.NAME||'')}</div>
+        <div class="col-county">${htmlEscape(county)}</div>
+        <div class="col-statezone">${htmlEscape(stateZone)}</div>
+        <div class="col-fips">${htmlEscape(fips)}</div>
+      </div>`;
   }).join('');
 }
 
@@ -369,9 +467,9 @@ async function loadZones(){
     const r = await fetch('/api/zones?all=1', { credentials: 'include' });
     const j = await r.json();
     if (!j || !j.success) {
-      console.error('Failed to load zones', j);
-      zones = [];
-      renderZones(document.getElementById('zoneFilter')?.value || '', document.getElementById('zoneStateFilter')?.value || '');
+  console.error('Failed to load zones', j);
+  zones = [];
+  renderZones(document.getElementById('zoneStateFilter')?.value || '');
       return;
     }
     const raw = j.data || [];
@@ -391,11 +489,11 @@ async function loadZones(){
       }
     } catch (e) { console.error('populate state select failed', e); }
 
-    renderZones(document.getElementById('zoneFilter')?.value || '', document.getElementById('zoneStateFilter')?.value || '');
+    renderZones(document.getElementById('zoneStateFilter')?.value || '');
   } catch (err) {
     console.error('loadZones error', err);
     zones = [];
-    renderZones(document.getElementById('zoneFilter')?.value || '', document.getElementById('zoneStateFilter')?.value || '');
+    renderZones(document.getElementById('zoneStateFilter')?.value || '');
   }
 }
 // ----- end added -----
@@ -540,7 +638,7 @@ function showAddModal(){
   if (zones.length === 0) {
     loadZones().catch(err => { console.error('loadZones error', err); });
   } else {
-    renderZones(document.getElementById('zoneFilter').value || '', document.getElementById('zoneStateFilter')?.value || '');
+    renderZones(document.getElementById('zoneStateFilter')?.value || '');
   }
 
   document.getElementById('userModal').style.display = 'flex';
@@ -565,12 +663,12 @@ function editUser(id){
   document.getElementById('ntfyToken').value = u.NtfyToken || '';
 
   if (zones.length === 0) {
-  loadZones().then(() => renderZones(document.getElementById('zoneFilter').value || '', document.getElementById('zoneStateFilter')?.value || '')).catch(err => {
+  loadZones().then(() => renderZones(document.getElementById('zoneStateFilter')?.value || '')).catch(err => {
       console.error('loadZones error', err);
-      renderZones(document.getElementById('zoneFilter').value || '', document.getElementById('zoneStateFilter')?.value || '');
+      renderZones(document.getElementById('zoneStateFilter')?.value || '');
     });
   } else {
-    renderZones(document.getElementById('zoneFilter').value || '', document.getElementById('zoneStateFilter')?.value || '');
+    renderZones(document.getElementById('zoneStateFilter')?.value || '');
   }
 
   document.getElementById('userModal').style.display = 'flex';
@@ -588,10 +686,9 @@ async function deleteUser(id){
 document.addEventListener('DOMContentLoaded', () => {
   const btn = document.getElementById('cancelUserBtn');
   if (btn) btn.addEventListener('click', (e) => { e.preventDefault(); closeModal(); });
-  const zf = document.getElementById('zoneFilter');
-  if (zf) zf.addEventListener('input', (e) => renderZones(e.target.value, document.getElementById('zoneStateFilter')?.value || ''));
+  // Removed free-text zone filter; keep state selector only
   const zsf = document.getElementById('zoneStateFilter');
-  if (zsf) zsf.addEventListener('change', (e) => renderZones(document.getElementById('zoneFilter')?.value || '', e.target.value || ''));
+  if (zsf) zsf.addEventListener('change', (e) => renderZones(e.target.value || ''));
   // Delegate Edit/Delete button clicks to avoid inline onclicks and startup race conditions
   const usersTable = document.getElementById('usersTable');
   if (usersTable) {
@@ -660,7 +757,21 @@ document.addEventListener('DOMContentLoaded', () => {
         NtfyUser: document.getElementById('ntfyUser').value || '',
         NtfyPassword: document.getElementById('ntfyPassword').value || '',
         NtfyToken: document.getElementById('ntfyToken').value || '',
-        ZoneAlert: Array.from(document.getElementById('zoneSelect').selectedOptions || []).map(o => parseInt(o.value, 10)).filter(n => !isNaN(n))
+        // Build ZoneAlert as alternating [STATE_ZONE, FIPS, STATE_ZONE, FIPS, ...]
+        ZoneAlert: (function(){
+          const checked = Array.from(document.querySelectorAll('#zoneList input.zone-checkbox:checked') || []);
+          const out = [];
+          checked.forEach(cb => {
+            const stateZone = (cb.dataset.statezone || '').toString();
+            const fips = (cb.dataset.fips || '').toString();
+            if (stateZone) out.push(String(stateZone));
+            if (fips !== undefined && fips !== '') {
+              // store FIPS as number when purely numeric for easier downstream use
+              if (/^[0-9]+$/.test(String(fips))) out.push(Number(fips)); else out.push(String(fips));
+            }
+          });
+          return out;
+        })()
       };
 
       try {
@@ -705,14 +816,31 @@ exit;
 
 function backupUsersTable($pdo) {
     try {
+        // base data directory (same directory as configured DB)
         $dir = dirname(\App\Config::$dbPath);
-        $backupFile = $dir . '/users_backup_' . date('Y-m-d_H-i-s') . '.json';
+        // ensure users_backup directory exists
+        $backupDir = $dir . '/users_backup';
+        if (!is_dir($backupDir)) {
+            mkdir($backupDir, 0755, true);
+        }
+
+        // write backup file into backupDir
+        $backupFile = $backupDir . '/users_backup_' . date('Y-m-d_H-i-s') . '.json';
         $users = $pdo->query("SELECT * FROM users")->fetchAll(PDO::FETCH_ASSOC);
         file_put_contents($backupFile, json_encode($users, JSON_PRETTY_PRINT));
-        $backups = glob($dir . '/users_backup_*.json');
+
+        // keep only the 10 most recent backups, remove older ones
+        $backups = glob($backupDir . '/users_backup_*.json') ?: [];
         if (count($backups) > 10) {
-            usort($backups, function($a,$b){return filemtime($a)-filemtime($b);});
-            foreach (array_slice($backups, 0, count($backups)-10) as $old) @unlink($old);
+            // sort by modification time descending (newest first)
+            usort($backups, function($a, $b){
+                return filemtime($b) - filemtime($a);
+            });
+            // remove everything after the first 10 entries
+            $toRemove = array_slice($backups, 10);
+            foreach ($toRemove as $old) {
+                @unlink($old);
+            }
         }
     } catch (Exception $e) {
         error_log('backupUsersTable error: '.$e->getMessage());
