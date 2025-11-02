@@ -173,13 +173,13 @@ th{background:#f8fafc;font-weight:700}
 .zone-search{width:100%;padding:8px;border:1px solid #dde6ef;border-radius:6px;margin-bottom:8px}
 .small{font-size:13px;color:#6b7280}
 .actions{display:flex;gap:8px;margin-top:12px}
+.zones-cell{cursor:help;text-decoration:underline dotted}
+.zone-popup{position:fixed;background:#fff;border:1px solid rgba(0,0,0,.12);padding:12px;border-radius:10px;box-shadow:0 12px 36px rgba(2,6,23,.18);max-width:640px;max-height:60vh;overflow:auto;z-index:1101;font-size:14px}
+.zone-popup .copy-btn{display:inline-block;margin-top:10px;padding:8px 10px;border-radius:6px;background:#0d6efd;color:#fff;font-weight:600;cursor:pointer}
+.zone-popup-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:1100;display:none}
 </style>
 
-<!-- Safe early stubs so any inline onclick won't throw before real functions load -->
-<script>
-window.closeModal = window.closeModal || function(){ try { const m = document.getElementById('userModal'); if (m) { m.style.display = 'none'; m.setAttribute('aria-hidden','true'); } const f = document.getElementById('userForm'); if(f) f.reset(); } catch(e){} };
-window.showAddModal = window.showAddModal || function(){ try { const m = document.getElementById('userModal'); if (m) m.style.display = 'flex'; } catch(e){} };
-</script>
+<!-- removed early stub functions; wiring is done via event listeners later -->
 </head>
 <body>
 <header class="header">
@@ -189,7 +189,7 @@ window.showAddModal = window.showAddModal || function(){ try { const m = documen
     <a class="nav-link primary" href="/users_table.php" style="margin-left:8px">Users</a>
   </nav>
 </header>
-<button class="btn btn-primary" onclick="showAddModal()">Add User</button>
+<button class="btn btn-primary" id="addUserBtn">Add User</button>
 <table id="usersTable" style="border:0">
   <thead>
     <tr><th>ID</th><th>Name</th><th>Email</th><th>Timezone</th><th>Zones</th><th>Actions</th></tr>
@@ -241,8 +241,11 @@ window.closeModal = closeModal;
       <div class="form-group"><label>Ntfy Token<input id="ntfyToken" placeholder="Ntfy token"></label></div>
 
       <div class="form-group">
-        <label>Alert Zones</label>
-        <input id="zoneSearch" class="zone-search" placeholder="Filter zones (state or name)">
+        <label style="display:block;margin-bottom:8px;font-weight:600">State</label>
+        <select id="zoneStateFilter" class="zone-search"><option value="">All states</option></select>
+        <label style="display:block;margin:10px 0 6px;font-weight:600">Filter zones</label>
+        <input id="zoneFilter" class="zone-search" placeholder="Filter zones (state or name)">
+        <label style="display:block;margin:10px 0 6px;font-weight:600">Alert Zones</label>
         <!-- multi-select so user can select many zones with ctrl/shift or by clicking multiple -->
         <select id="zoneSelect" class="select-multi" multiple size="12" aria-label="Alert zones"></select>
         <div class="small" style="margin-top:8px">Hold Ctrl (Cmd) or Shift to select multiple, or use the filter above.</div>
@@ -259,6 +262,16 @@ window.closeModal = closeModal;
 <script>
 let zones = [], users = [];
 
+// simple HTML escape for attributes/cell content
+function htmlEscape(s){
+  return String(s === undefined || s === null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // Render users table
 function renderUsers(){
   const t = document.querySelector('#usersTable tbody');
@@ -266,26 +279,57 @@ function renderUsers(){
   t.innerHTML = (users || []).map(u=>{
     let za = [];
     try { za = JSON.parse(u.ZoneAlert || '[]'); } catch(e) { za = []; }
+    // Map zone IDs to zone codes (UGC) if we have zones loaded
+    let zoneCodes = [];
+    try {
+      if (Array.isArray(za) && zones && zones.length) {
+        zoneCodes = za.map(id => {
+          const z = zones.find(x => x.id == id);
+          return z ? (z.ZONE || z.NAME || id) : id;
+        }).filter(Boolean);
+      }
+    } catch (e) { zoneCodes = []; }
+
+    const zonesDisplay = (zoneCodes && zoneCodes.length) ? zoneCodes.join(', ') : (Array.isArray(za) ? za.length + ' zones' : '0 zones');
+    // short display with tooltip for long lists
+    const MAX_SHOW = 5;
+    let shortDisplay = zonesDisplay;
+    let titleAttr = '';
+    if (Array.isArray(zoneCodes) && zoneCodes.length > MAX_SHOW) {
+      shortDisplay = zoneCodes.slice(0, MAX_SHOW).join(', ') + ' …';
+      titleAttr = zoneCodes.join(', ');
+    } else {
+      titleAttr = zonesDisplay;
+    }
+
     return `<tr>
       <td>${u.idx}</td>
       <td>${(u.FirstName||'') + ' ' + (u.LastName||'')}</td>
       <td>${u.Email || ''}</td>
       <td>${u.Timezone || ''}</td>
-      <td>${Array.isArray(za) ? za.length : 0} zones</td>
+      <td class="zones-cell" data-full="${htmlEscape(titleAttr)}">${htmlEscape(shortDisplay)}</td>
       <td>
-        <button class="btn btn-primary" onclick="editUser(${u.idx})">Edit</button>
-        <button class="btn btn-danger" onclick="deleteUser(${u.idx})">Delete</button>
+        <button class="btn btn-primary btn-edit" data-id="${u.idx}">Edit</button>
+        <button class="btn btn-danger btn-delete" data-id="${u.idx}">Delete</button>
       </td>
     </tr>`;
   }).join('');
 }
 
 // Render zones into the multi-select (supports normalized zone objects)
-function renderZones(q=''){
+function renderZones(q='', stateFilter=''){
   const sel = document.getElementById('zoneSelect');
   if (!sel) return;
   const query = (q || '').toLowerCase().trim();
-  const filtered = query ? (zones || []).filter(z => (z.NAME||'').toLowerCase().includes(query) || (z.STATE||'').toLowerCase().includes(query)) : (zones || []);
+  const stateQ = (stateFilter || document.getElementById('zoneStateFilter')?.value || '').toLowerCase().trim();
+  const filtered = (zones || []).filter(z => {
+    const name = (z.NAME||'').toLowerCase();
+    const state = (z.STATE||'').toLowerCase();
+    const matchQuery = !query || name.includes(query) || state.includes(query) || (z.ZONE||'').toLowerCase().includes(query);
+    const matchState = !stateQ || state === stateQ;
+    return matchQuery && matchState;
+  });
+
   const currentSel = (document.getElementById('userId') && document.getElementById('userId').value)
     ? (JSON.parse((users.find(u=>u.idx==document.getElementById('userId').value)||{}).ZoneAlert||'[]').map(v=>parseInt(v,10)))
     : [];
@@ -293,7 +337,15 @@ function renderZones(q=''){
   sel.innerHTML = (filtered || []).map(z => {
     const id = z.id ?? z.idx ?? z.ID ?? z.IDX ?? 0;
     const selected = currentSel.includes(Number(id)) ? 'selected' : '';
-    const label = `${(z.STATE||'').trim()} - ${(z.NAME||'').trim()}${z.ZONE ? ' ('+z.ZONE+')' : ''}`;
+    // Build an option label that includes all fields from the raw zone object for clarity
+    let label = ' ';
+    try {
+      if (z.raw && typeof z.raw === 'object') {
+        label = Object.entries(z.raw).map(([k,v]) => `${k}:${v}`).join(' | ');
+      } else {
+        label = `${(z.STATE||'').trim()} - ${(z.NAME||'').trim()}${z.ZONE ? ' ('+z.ZONE+')' : ''}`;
+      }
+    } catch (e) { label = `${(z.STATE||'').trim()} - ${(z.NAME||'').trim()}`; }
     return `<option value="${id}" ${selected}>${label}</option>`;
   }).join('');
 }
@@ -319,7 +371,7 @@ async function loadZones(){
     if (!j || !j.success) {
       console.error('Failed to load zones', j);
       zones = [];
-      renderZones(document.getElementById('zoneSearch')?.value || '');
+      renderZones(document.getElementById('zoneFilter')?.value || '', document.getElementById('zoneStateFilter')?.value || '');
       return;
     }
     const raw = j.data || [];
@@ -330,14 +382,153 @@ async function loadZones(){
       const zoneCode = z.ZONE ?? z.zone ?? '';
       return { id: id === null ? null : parseInt(id, 10), NAME: name, STATE: state, ZONE: zoneCode, raw: z };
     }).filter(z => z.id !== null);
-    renderZones(document.getElementById('zoneSearch')?.value || '');
+    // Populate state select with unique states
+    try {
+      const stateSel = document.getElementById('zoneStateFilter');
+      if (stateSel) {
+        const states = Array.from(new Set(zones.map(z => (z.STATE||'').trim()).filter(s => s))).sort();
+        stateSel.innerHTML = '<option value="">All states</option>' + states.map(s => `<option value="${s}">${s}</option>`).join('');
+      }
+    } catch (e) { console.error('populate state select failed', e); }
+
+    renderZones(document.getElementById('zoneFilter')?.value || '', document.getElementById('zoneStateFilter')?.value || '');
   } catch (err) {
     console.error('loadZones error', err);
     zones = [];
-    renderZones(document.getElementById('zoneSearch')?.value || '');
+    renderZones(document.getElementById('zoneFilter')?.value || '', document.getElementById('zoneStateFilter')?.value || '');
   }
 }
 // ----- end added -----
+
+// Popup for zone full list (click-to-copy)
+let zonePopupEl = null;
+let zonePopupBackdropEl = null;
+let zonePopupPinned = false;
+let zonePopupCell = null;
+function ensureZonePopup(){
+  if (zonePopupEl) return zonePopupEl;
+  // create backdrop and popup container
+  zonePopupBackdropEl = document.createElement('div');
+  zonePopupBackdropEl.className = 'zone-popup-backdrop';
+  zonePopupBackdropEl.style.display = 'none';
+  document.body.appendChild(zonePopupBackdropEl);
+
+  zonePopupEl = document.createElement('div');
+  zonePopupEl.className = 'zone-popup';
+  zonePopupEl.style.display = 'none';
+  zonePopupEl.setAttribute('aria-hidden','true');
+  document.body.appendChild(zonePopupEl);
+  return zonePopupEl;
+}
+function showZonePopup(cell, clientX, clientY, pinned = false){
+  try {
+    const full = cell.getAttribute('data-full') || '';
+    const el = ensureZonePopup();
+    el.innerHTML = '';
+
+    // Header with close
+    const hdr = document.createElement('div');
+    hdr.style.display = 'flex';
+    hdr.style.justifyContent = 'space-between';
+    hdr.style.alignItems = 'center';
+    hdr.style.marginBottom = '8px';
+    const title = document.createElement('div');
+    title.textContent = 'Full zone list';
+    title.style.fontWeight = '700';
+    hdr.appendChild(title);
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '✕';
+    closeBtn.style.border = 'none';
+    closeBtn.style.background = 'transparent';
+    closeBtn.style.cursor = 'pointer';
+    closeBtn.addEventListener('click', () => { zonePopupPinned = false; hideZonePopup(); });
+    hdr.appendChild(closeBtn);
+    el.appendChild(hdr);
+
+    const search = document.createElement('input');
+    search.type = 'search';
+    search.placeholder = 'Filter inside list...';
+    search.style.width = '100%';
+    search.style.padding = '8px';
+    search.style.marginBottom = '8px';
+    search.style.borderRadius = '6px';
+    search.style.border = '1px solid rgba(0,0,0,0.08)';
+    el.appendChild(search);
+
+    const list = document.createElement('div');
+    list.style.maxHeight = '50vh';
+    list.style.overflow = 'auto';
+    list.style.padding = '6px';
+    list.style.borderRadius = '6px';
+    list.style.background = '#fbfdff';
+    el.appendChild(list);
+
+    const items = (full || '').split(/,\s*/).filter(Boolean);
+    function renderList(filter){
+      const q = (filter||'').toLowerCase().trim();
+      list.innerHTML = items.filter(i => !q || i.toLowerCase().includes(q)).map(i => `<div style="padding:6px 4px;border-bottom:1px solid rgba(0,0,0,0.03)">${htmlEscape(i)}</div>`).join('');
+    }
+    renderList('');
+    search.addEventListener('input', (e)=> renderList(e.target.value));
+
+    const btnRow = document.createElement('div');
+    btnRow.style.display = 'flex';
+    btnRow.style.justifyContent = 'flex-end';
+    btnRow.style.gap = '8px';
+    btnRow.style.marginTop = '10px';
+    const copyVisible = document.createElement('div');
+    copyVisible.className = 'copy-btn';
+    copyVisible.textContent = 'Copy visible';
+    copyVisible.addEventListener('click', async () => {
+      try { const visible = Array.from(list.children).map(n=>n.textContent).join(', '); await navigator.clipboard.writeText(visible); copyVisible.textContent = 'Copied'; setTimeout(()=>copyVisible.textContent='Copy visible', 1500); } catch(e){ console.error(e); }
+    });
+    const copyFull = document.createElement('div');
+    copyFull.className = 'copy-btn';
+    copyFull.textContent = 'Copy full list';
+    copyFull.addEventListener('click', async () => { try { await navigator.clipboard.writeText(full); copyFull.textContent = 'Copied'; setTimeout(()=>copyFull.textContent='Copy full list', 1500); } catch(e){ console.error(e); } });
+    btnRow.appendChild(copyVisible);
+    btnRow.appendChild(copyFull);
+    el.appendChild(btnRow);
+
+    // Show as modal (centered) when pinned, otherwise near cell
+    el.style.display = 'block';
+    el.style.opacity = '1';
+    el.setAttribute('aria-hidden','false');
+    if (pinned) {
+      if (zonePopupBackdropEl) zonePopupBackdropEl.style.display = 'block';
+      el.style.left = '50%';
+      el.style.top = '12%';
+      el.style.transform = 'translateX(-50%)';
+      el.style.maxWidth = '80vw';
+    } else {
+      const pad = 12;
+      const rect = el.getBoundingClientRect();
+      let left = clientX + pad;
+      let top = clientY + pad;
+      if (left + rect.width > window.innerWidth - pad) left = window.innerWidth - rect.width - pad;
+      if (top + rect.height > window.innerHeight - pad) top = clientY - rect.height - pad;
+      if (top < pad) top = pad;
+      if (left < pad) left = pad;
+      el.style.left = left + 'px';
+      el.style.top = top + 'px';
+      el.style.transform = '';
+    }
+
+    zonePopupPinned = !!pinned;
+    zonePopupCell = cell;
+  } catch (e) { console.error('showZonePopup error', e); }
+}
+
+function hideZonePopup(){
+  try{
+    const el = ensureZonePopup();
+    el.style.display = 'none';
+    el.setAttribute('aria-hidden','true');
+    if (zonePopupBackdropEl) zonePopupBackdropEl.style.display = 'none';
+    zonePopupPinned = false;
+    zonePopupCell = null;
+  } catch(e){}
+}
 
 // Show add modal immediately; load zones asynchronously so fetch issues don't block the UI
 function showAddModal(){
@@ -349,7 +540,7 @@ function showAddModal(){
   if (zones.length === 0) {
     loadZones().catch(err => { console.error('loadZones error', err); });
   } else {
-    renderZones(document.getElementById('zoneSearch').value || '');
+    renderZones(document.getElementById('zoneFilter').value || '', document.getElementById('zoneStateFilter')?.value || '');
   }
 
   document.getElementById('userModal').style.display = 'flex';
@@ -359,7 +550,7 @@ function showAddModal(){
 
 // Edit user: open modal immediately and ensure zones will populate when available
 function editUser(id){
-  const u = users.find(x => x.idx === id);
+  const u = users.find(x => x.idx == id);
   if (!u) return;
   document.getElementById('modalTitle').textContent = 'Edit User';
   document.getElementById('userId').value = u.idx;
@@ -374,12 +565,12 @@ function editUser(id){
   document.getElementById('ntfyToken').value = u.NtfyToken || '';
 
   if (zones.length === 0) {
-    loadZones().then(() => renderZones(document.getElementById('zoneSearch').value || '')).catch(err => {
+  loadZones().then(() => renderZones(document.getElementById('zoneFilter').value || '', document.getElementById('zoneStateFilter')?.value || '')).catch(err => {
       console.error('loadZones error', err);
-      renderZones(document.getElementById('zoneSearch').value || '');
+      renderZones(document.getElementById('zoneFilter').value || '', document.getElementById('zoneStateFilter')?.value || '');
     });
   } else {
-    renderZones(document.getElementById('zoneSearch').value || '');
+    renderZones(document.getElementById('zoneFilter').value || '', document.getElementById('zoneStateFilter')?.value || '');
   }
 
   document.getElementById('userModal').style.display = 'flex';
@@ -397,6 +588,98 @@ async function deleteUser(id){
 document.addEventListener('DOMContentLoaded', () => {
   const btn = document.getElementById('cancelUserBtn');
   if (btn) btn.addEventListener('click', (e) => { e.preventDefault(); closeModal(); });
+  const zf = document.getElementById('zoneFilter');
+  if (zf) zf.addEventListener('input', (e) => renderZones(e.target.value, document.getElementById('zoneStateFilter')?.value || ''));
+  const zsf = document.getElementById('zoneStateFilter');
+  if (zsf) zsf.addEventListener('change', (e) => renderZones(document.getElementById('zoneFilter')?.value || '', e.target.value || ''));
+  // Delegate Edit/Delete button clicks to avoid inline onclicks and startup race conditions
+  const usersTable = document.getElementById('usersTable');
+  if (usersTable) {
+    usersTable.addEventListener('click', (ev) => {
+      try {
+        const btn = ev.target.closest('button');
+        if (!btn) return;
+        if (btn.classList.contains('btn-edit')) {
+          const id = btn.getAttribute('data-id');
+          if (id) editUser(Number(id));
+          return;
+        }
+        if (btn.classList.contains('btn-delete')) {
+          const id = btn.getAttribute('data-id');
+          if (id) deleteUser(Number(id));
+          return;
+        }
+      } catch (e) { console.error('usersTable click handler', e); }
+    });
+  }
+  // Wire Add User button (replaces inline onclick)
+  const addBtn = document.getElementById('addUserBtn');
+  if (addBtn) addBtn.addEventListener('click', (e) => { e.preventDefault(); showAddModal(); });
+
+  // Zone popup handlers (show on hover, hide on leave). Use delegation so rows can be re-rendered.
+  // Hover to preview (non-pinned), click to pin modal with backdrop and search
+  document.addEventListener('pointerover', (ev) => {
+    const cell = ev.target.closest && ev.target.closest('.zones-cell');
+    if (cell && !zonePopupPinned) {
+      const rect = cell.getBoundingClientRect();
+      showZonePopup(cell, rect.right, rect.top + (rect.height/2), false);
+    }
+  });
+  document.addEventListener('pointerout', (ev) => {
+    const cell = ev.target.closest && ev.target.closest('.zones-cell');
+    if (cell && !zonePopupPinned) hideZonePopup();
+  });
+  // Click toggles pinned modal; clicks outside close it
+  document.addEventListener('click', (ev) => {
+    const cell = ev.target.closest && ev.target.closest('.zones-cell');
+    if (cell) {
+      const rect = cell.getBoundingClientRect();
+      if (zonePopupPinned && zonePopupCell === cell) {
+        zonePopupPinned = false; hideZonePopup();
+      } else { showZonePopup(cell, rect.right, rect.top + (rect.height/2), true); }
+      ev.stopPropagation();
+      return;
+    }
+    // if clicking outside popup while pinned, hide it
+    if (zonePopupPinned && zonePopupEl && !zonePopupEl.contains(ev.target)) {
+      zonePopupPinned = false; hideZonePopup();
+    }
+  });
+  const form = document.getElementById('userForm');
+  if (form) {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = document.getElementById('userId').value || '';
+      const payload = {
+        FirstName: document.getElementById('firstName').value || '',
+        LastName: document.getElementById('lastName').value || '',
+        Email: document.getElementById('email').value || '',
+        Timezone: document.getElementById('timezone').value || 'America/New_York',
+        PushoverUser: document.getElementById('pushoverUser').value || '',
+        PushoverToken: document.getElementById('pushoverToken').value || '',
+        NtfyUser: document.getElementById('ntfyUser').value || '',
+        NtfyPassword: document.getElementById('ntfyPassword').value || '',
+        NtfyToken: document.getElementById('ntfyToken').value || '',
+        ZoneAlert: Array.from(document.getElementById('zoneSelect').selectedOptions || []).map(o => parseInt(o.value, 10)).filter(n => !isNaN(n))
+      };
+
+      try {
+        const url = id ? '/api/users/' + encodeURIComponent(id) : '/api/users';
+        const method = id ? 'PUT' : 'POST';
+        const r = await fetch(url, { method, credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        const j = await r.json();
+        if (!r.ok || !j || j.success === false) {
+          alert(j && j.error ? j.error : 'Save failed');
+          return;
+        }
+        closeModal();
+        if (typeof loadUsers === 'function') loadUsers();
+      } catch (err) {
+        console.error('save user error', err);
+        alert('Save failed');
+      }
+    });
+  }
   // existing startup: load users/zones
   try {
       if (typeof loadUsers === 'function' && typeof loadZones === 'function') {
