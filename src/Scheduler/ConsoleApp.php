@@ -64,8 +64,18 @@ final class ConsoleApp
                         $processor->processPending();
                         // Replace active with incoming after processing
                         (new \App\Repository\AlertsRepository())->replaceActiveWithIncoming();
+                    } catch (\PDOException $e) {
+                        // Log database errors with more detail
+                        LoggerFactory::get()->error('Scheduler database error', [
+                            'error' => $e->getMessage(),
+                            'code' => $e->getCode(),
+                            'trace' => $e->getTraceAsString()
+                        ]);
                     } catch (\Throwable $e) {
-                        LoggerFactory::get()->error('Scheduler tick error', ['error' => $e->getMessage()]);
+                        LoggerFactory::get()->error('Scheduler tick error', [
+                            'error' => $e->getMessage(),
+                            'trace' => $e->getTraceAsString()
+                        ]);
                     }
 
                     if ((time() - $lastVacuum) >= $vacuumEvery) {

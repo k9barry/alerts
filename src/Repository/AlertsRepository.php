@@ -28,7 +28,7 @@ final class AlertsRepository
         try {
             $this->db->exec('DELETE FROM incoming_alerts');
           $stmt = $this->db->prepare(
-            'INSERT INTO incoming_alerts (
+            'INSERT OR REPLACE INTO incoming_alerts (
                     id, type, status, msg_type, category, severity, certainty, urgency,
                     event, headline, description, instruction, area_desc, sent, effective,
                     onset, expires, ends, same_array, ugc_array, json

@@ -55,8 +55,27 @@ final class AlertFetcher
             return $a;
         }, $alerts);
 
-        $this->repo->replaceIncoming($normalized);
-        LoggerFactory::get()->info('Stored incoming alerts', ['count' => count($normalized)]);
-        return count($normalized);
+        // Deduplicate by ID to prevent constraint violations
+        $deduplicated = [];
+        $seenIds = [];
+        foreach ($normalized as $alert) {
+            $id = $alert['id'] ?? null;
+            if ($id && !isset($seenIds[$id])) {
+                $deduplicated[] = $alert;
+                $seenIds[$id] = true;
+            }
+        }
+
+        if (count($normalized) !== count($deduplicated)) {
+            LoggerFactory::get()->warning('Duplicate alert IDs detected from API', [
+                'total' => count($normalized),
+                'unique' => count($deduplicated),
+                'duplicates' => count($normalized) - count($deduplicated)
+            ]);
+        }
+
+        $this->repo->replaceIncoming($deduplicated);
+        LoggerFactory::get()->info('Stored incoming alerts', ['count' => count($deduplicated)]);
+        return count($deduplicated);
     }
 }
