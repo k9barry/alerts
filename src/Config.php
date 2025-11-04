@@ -32,6 +32,7 @@ final class Config
 
     public static string $pushoverApiUrl;
     public static string $weatherApiUrl;
+    public static string $zonesDataUrl;
 
     public static string $pushoverUser;
     public static string $pushoverToken;
@@ -69,6 +70,7 @@ final class Config
 
       self::$pushoverApiUrl = (string)(self::env('PUSHOVER_API_URL', 'https://api.pushover.net/1/messages.json'));
       self::$weatherApiUrl = (string)(self::env('WEATHER_API_URL', 'https://api.weather.gov/alerts/active'));
+      self::$zonesDataUrl = (string)(self::env('ZONES_DATA_URL', 'https://www.weather.gov/source/gis/Shapefiles/County/bp18mr25.dbx'));
 
       self::$pushoverUser = (string)(self::env('PUSHOVER_USER', 'u-example'));
       self::$pushoverToken = (string)(self::env('PUSHOVER_TOKEN', 't-example'));
@@ -85,6 +87,14 @@ final class Config
       self::$ntfyToken = self::env('NTFY_TOKEN') !== null ? (string)self::env('NTFY_TOKEN') : null;
       self::$ntfyTitlePrefix = self::env('NTFY_TITLE_PREFIX') !== null ? (string)self::env('NTFY_TITLE_PREFIX') : null;
 
+      // Validate NTFY topic name if provided and NTFY is enabled
+      if (self::$ntfyEnabled && !empty(self::$ntfyTopic) && !self::isValidNtfyTopicName(self::$ntfyTopic)) {
+        throw new \RuntimeException(sprintf(
+          'Invalid NTFY_TOPIC "%s": Topic names can only contain letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-)',
+          self::$ntfyTopic
+        ));
+      }
+
       self::$timezone = (string)(self::env('TIMEZONE', 'America/Indianapolis'));
 
       $codes = (string)self::env('WEATHER_ALERT_CODES', '');
@@ -95,4 +105,22 @@ final class Config
         self::$weatherAlerts = [];
       }
     }
+
+  /**
+   * Validates ntfy topic name character set.
+   * Topic names can use letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-).
+   * 
+   * @param string $topic Topic name to validate
+   * @return bool True if topic is valid, false otherwise
+   */
+  private static function isValidNtfyTopicName(string $topic): bool
+  {
+    $topic = trim($topic);
+    if ($topic === '') {
+      return false;
+    }
+    
+    // Check if topic contains only allowed characters: letters, numbers, underscores, hyphens
+    return preg_match('/^[A-Za-z0-9_-]+$/', $topic) === 1;
+  }
 }

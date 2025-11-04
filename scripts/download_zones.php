@@ -33,7 +33,7 @@ if (!is_dir($dir)) {
     mkdir($dir, 0775, true);
 }
 
-$url = "https://www.weather.gov/source/gis/Shapefiles/County/bp18mr25.dbx";
+$url = Config::$zonesDataUrl;
 
 echo "Downloading zones data from NWS...\n";
 echo "URL: {$url}\n";

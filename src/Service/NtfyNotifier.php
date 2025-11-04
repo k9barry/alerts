@@ -27,12 +27,30 @@ class NtfyNotifier
   }
 
   /**
-   * Whether ntfy notifications are enabled and the topic is non-empty.
+   * Validates ntfy topic name character set.
+   * Topic names can use letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-).
+   * 
+   * @param string $topic Topic name to validate
+   * @return bool True if topic is valid, false otherwise
+   */
+  public static function isValidTopicName(string $topic): bool
+  {
+    $topic = trim($topic);
+    if ($topic === '') {
+      return false;
+    }
+    
+    // Check if topic contains only allowed characters: letters, numbers, underscores, hyphens
+    return preg_match('/^[A-Za-z0-9_-]+$/', $topic) === 1;
+  }
+
+  /**
+   * Whether ntfy notifications are enabled and the topic is non-empty and valid.
    */
   public function isEnabled(): bool
   {
     $topic = trim($this->topic);
-    return $this->enabled && $topic !== '';
+    return $this->enabled && $topic !== '' && self::isValidTopicName($topic);
   }
 
   /**
@@ -52,6 +70,14 @@ class NtfyNotifier
     $topic = trim((string)$this->topic);
     if ($topic === '') {
       $this->logger->error('Ntfy sending aborted: empty topic');
+      return;
+    }
+
+    if (!self::isValidTopicName($topic)) {
+      $this->logger->error('Ntfy sending aborted: invalid topic name', [
+        'topic' => $topic,
+        'reason' => 'Topic names can only contain letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-)'
+      ]);
       return;
     }
 
@@ -208,6 +234,15 @@ class NtfyNotifier
 
     if ($topic === '') {
       $this->logger->error('Ntfy sending aborted: no topic available (neither user NtfyTopic nor config topic)');
+      return;
+    }
+
+    if (!self::isValidTopicName($topic)) {
+      $this->logger->error('Ntfy sending aborted: invalid topic name', [
+        'topic' => $topic,
+        'user_idx' => $userRow['idx'] ?? null,
+        'reason' => 'Topic names can only contain letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-)'
+      ]);
       return;
     }
 

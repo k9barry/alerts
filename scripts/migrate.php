@@ -134,11 +134,57 @@ $ensureColumn($pdo, 'users', 'NtfyTopic TEXT');
 $pdo->exec("CREATE INDEX IF NOT EXISTS idx_users_email ON users(Email)");
 
 // Load zones data if file exists and table is empty
-$zonesFile = $dir . '/bp18mr25.dbx';
+// Extract filename from zones data URL for local storage
+$zonesFileName = basename(parse_url(Config::$zonesDataUrl, PHP_URL_PATH));
+$zonesFile = $dir . '/' . $zonesFileName;
 if (file_exists($zonesFile)) {
     $count = $pdo->query("SELECT COUNT(*) FROM zones")->fetchColumn();
+    
+    // Check if we need to apply transformations to existing data
+    // Look for records that don't have the "C" in STATE_ZONE (untransformed)
+    $needsTransformation = $pdo->query("
+        SELECT COUNT(*) FROM zones 
+        WHERE LENGTH(STATE_ZONE) >= 3 
+        AND SUBSTR(STATE_ZONE, 3, 1) != 'C'
+        LIMIT 1
+    ")->fetchColumn();
+    
+    if ($needsTransformation > 0) {
+        echo "Applying transformations to existing zones data...\n";
+        
+        $pdo->beginTransaction();
+        try {
+            // Update STATE_ZONE: Add "C" as third character
+            $stmt = $pdo->prepare("
+                UPDATE zones 
+                SET STATE_ZONE = SUBSTR(STATE_ZONE, 1, 2) || 'C' || SUBSTR(STATE_ZONE, 3)
+                WHERE LENGTH(STATE_ZONE) >= 3 
+                AND SUBSTR(STATE_ZONE, 3, 1) != 'C'
+            ");
+            $stmt->execute();
+            $stateZoneUpdates = $stmt->rowCount();
+            
+            // Update FIPS: Add "0" as first character  
+            $stmt = $pdo->prepare("
+                UPDATE zones 
+                SET FIPS = '0' || FIPS
+                WHERE LENGTH(FIPS) = 5 
+                AND FIPS GLOB '[0-9][0-9][0-9][0-9][0-9]'
+                AND SUBSTR(FIPS, 1, 1) != '0'
+            ");
+            $stmt->execute();
+            $fipsUpdates = $stmt->rowCount();
+            
+            $pdo->commit();
+            echo "Applied transformations: {$stateZoneUpdates} STATE_ZONE, {$fipsUpdates} FIPS updates\n";
+        } catch (Exception $e) {
+            $pdo->rollback();
+            echo "Error applying transformations: " . $e->getMessage() . "\n";
+        }
+    }
+    
     if ($count == 0) {
-        echo "Loading zones data from bp18mr25.dbx...\n";
+        echo "Loading zones data from {$zonesFileName}...\n";
         $lines = file($zonesFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
         $header = null;
         $loaded = 0;
@@ -151,6 +197,20 @@ if (file_exists($zonesFile)) {
             }
             
             if (count($fields) >= 11) {
+                // Apply transformations to STATE_ZONE and FIPS
+                $stateZone = $fields[4] ?? '';
+                $fips = $fields[6] ?? '';
+                
+                // 1. Add "C" as the third character in STATE_ZONE (e.g., NM201 becomes NMC201)
+                if (strlen($stateZone) >= 3) {
+                    $stateZone = substr($stateZone, 0, 2) . 'C' . substr($stateZone, 2);
+                }
+                
+                // 2. Add "0" as the first character in FIPS (e.g., 35045 becomes 035045)
+                if (!empty($fips) && is_numeric($fips)) {
+                    $fips = '0' . $fips;
+                }
+                
                 $stmt = $pdo->prepare(
                     "INSERT OR IGNORE INTO zones (STATE, ZONE, CWA, NAME, STATE_ZONE, COUNTY, FIPS, TIME_ZONE, FE_AREA, LAT, LON) 
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
@@ -160,9 +220,9 @@ if (file_exists($zonesFile)) {
                     $fields[1] ?? '', // ZONE
                     $fields[2] ?? '', // CWA
                     $fields[3] ?? '', // NAME
-                    $fields[4] ?? '', // STATE_ZONE
+                    $stateZone,       // STATE_ZONE (modified)
                     $fields[5] ?? '', // COUNTY
-                    $fields[6] ?? '', // FIPS
+                    $fips,           // FIPS (modified)
                     $fields[7] ?? '', // TIME_ZONE
                     $fields[8] ?? '', // FE_AREA
                     !empty($fields[9]) ? (float)$fields[9] : null, // LAT

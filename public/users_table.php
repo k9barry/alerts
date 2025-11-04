@@ -3,6 +3,7 @@ require __DIR__ . '/../src/bootstrap.php';
 
 use App\DB\Connection;
 use App\Service\ZoneAlertHelper;
+use App\Service\NtfyNotifier;
 
 $pdo = Connection::get();
 $requestUri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
@@ -42,6 +43,15 @@ if (preg_match('#^/api/users(?:/(\d+))?$#', $requestUri, $m)) {
             }
             // server-side normalize ZoneAlert to a consistent JSON array of strings
             $zoneAlert = ZoneAlertHelper::normalizeForSave($data['ZoneAlert'] ?? []);
+            
+            // Validate NtfyTopic if provided
+            $ntfyTopic = $data['NtfyTopic'] ?? '';
+            if (!empty($ntfyTopic) && !NtfyNotifier::isValidTopicName($ntfyTopic)) {
+                http_response_code(400);
+                echo json_encode(['success' => false, 'error' => 'Invalid Ntfy Topic: Topic names can only contain letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-)']);
+                exit;
+            }
+            
             $stmt = $pdo->prepare("INSERT INTO users (FirstName, LastName, Email, Timezone, PushoverUser, PushoverToken, NtfyUser, NtfyPassword, NtfyToken, NtfyTopic, ZoneAlert) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $stmt->execute([
                 $data['FirstName'] ?? '',
@@ -53,7 +63,7 @@ if (preg_match('#^/api/users(?:/(\d+))?$#', $requestUri, $m)) {
                 $data['NtfyUser'] ?? '',
                 $data['NtfyPassword'] ?? '',
                 $data['NtfyToken'] ?? '',
-                $data['NtfyTopic'] ?? '',
+                $ntfyTopic,
                 $zoneAlert
             ]);
             backupUsersTable($pdo);
@@ -75,6 +85,15 @@ if (preg_match('#^/api/users(?:/(\d+))?$#', $requestUri, $m)) {
             }
             // server-side normalize ZoneAlert to a consistent JSON array of strings
             $zoneAlert = ZoneAlertHelper::normalizeForSave($data['ZoneAlert'] ?? []);
+            
+            // Validate NtfyTopic if provided
+            $ntfyTopic = $data['NtfyTopic'] ?? '';
+            if (!empty($ntfyTopic) && !NtfyNotifier::isValidTopicName($ntfyTopic)) {
+                http_response_code(400);
+                echo json_encode(['success' => false, 'error' => 'Invalid Ntfy Topic: Topic names can only contain letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-)']);
+                exit;
+            }
+            
             $stmt = $pdo->prepare("UPDATE users SET FirstName=?, LastName=?, Email=?, Timezone=?, PushoverUser=?, PushoverToken=?, NtfyUser=?, NtfyPassword=?, NtfyToken=?, NtfyTopic=?, ZoneAlert=?, UpdatedAt=CURRENT_TIMESTAMP WHERE idx=?");
             $stmt->execute([
                 $data['FirstName'] ?? '',
@@ -86,7 +105,7 @@ if (preg_match('#^/api/users(?:/(\d+))?$#', $requestUri, $m)) {
                 $data['NtfyUser'] ?? '',
                 $data['NtfyPassword'] ?? '',
                 $data['NtfyToken'] ?? '',
-                $data['NtfyTopic'] ?? '',
+                $ntfyTopic,
                 $zoneAlert,
                 $userId
             ]);
@@ -259,7 +278,10 @@ window.closeModal = closeModal;
         <label style="display:block;margin-bottom:8px;font-weight:600">State</label>
         <select id="zoneStateFilter" class="zone-search"><option value="">All states</option></select>
   <!-- Filter zones removed per request; keep state selector only -->
-        <label style="display:block;margin:10px 0 6px;font-weight:600">Alert Zones</label>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin:10px 0 6px">
+          <label style="font-weight:600;margin:0">Alert Zones</label>
+          <button id="clearAllZonesBtn" type="button" class="btn btn-secondary" style="font-size:12px;padding:4px 8px">Clear All</button>
+        </div>
         <div style="display:flex;gap:8px;font-weight:700;font-size:13px;margin-bottom:6px;color:#374151">
           <div style="width:16%">STATE</div>
           <div style="width:36%">NAME</div>
@@ -282,17 +304,63 @@ window.closeModal = closeModal;
 
 <script>
 let zones = [], users = [];
+// currentSelections holds the user's live selections while the modal is open.
+// This allows selections to persist across state filter changes and while
+// editing (before saving back to the server).
+let currentSelections = new Set();
+let selectionsExplicitlyCleared = false;
+
+function initSelectionsForUser(userId){
+  try {
+    console.log('initSelectionsForUser called with userId:', userId);
+    currentSelections.clear();
+    selectionsExplicitlyCleared = false;
+    if (!userId) {
+      console.log('No userId provided, returning');
+      return;
+    }
+    const stored = getStoredZoneSelections(userId) || [];
+    console.log('Retrieved stored selections:', stored);
+    console.log('Zones array length:', zones.length);
+    
+    stored.forEach(v => {
+      if (v !== undefined && v !== null) {
+        currentSelections.add(String(v));
+        console.log('Added to currentSelections:', String(v));
+      }
+    });
+    console.log('Final currentSelections size:', currentSelections.size);
+    
+    // If we didn't get any stored selections but zones aren't loaded yet,
+    // we need to defer initialization until zones are available
+    if (stored.length === 0 && zones.length === 0) {
+      const u = users.find(x => String(x.idx) === String(userId));
+      if (u && u.ZoneAlert && u.ZoneAlert !== '[]' && u.ZoneAlert.trim() !== '') {
+        console.log('Deferring initialization - zones not loaded yet, ZoneAlert:', u.ZoneAlert);
+        // Store userId for later initialization when zones load
+        window.pendingUserIdForSelection = userId;
+      }
+    }
+  } catch(e){ console.error('initSelectionsForUser error', e); currentSelections.clear(); }
+}
 
 // Return stored ZoneAlert as array of UGC codes for a given userId (or for current form userId)
 function getStoredZoneSelections(userId){
   try {
     const id = userId || (document.getElementById('userId') && document.getElementById('userId').value) || '';
+    console.log('getStoredZoneSelections called with userId:', id);
     if (!id) return [];
     const u = users.find(x => String(x.idx) === String(id));
-    if (!u) return [];
+    if (!u) {
+      console.log('User not found for id:', id);
+      return [];
+    }
+    console.log('Found user:', u.FirstName, u.LastName);
     const rawVal = u.ZoneAlert || '[]';
+    console.log('Raw ZoneAlert value:', rawVal);
     let parsed = [];
-    try { parsed = JSON.parse(rawVal || '[]'); } catch(e){ parsed = []; }
+    try { parsed = JSON.parse(rawVal || '[]'); } catch(e){ console.log('JSON parse error:', e); parsed = []; }
+    console.log('Parsed ZoneAlert:', parsed);
     if (!Array.isArray(parsed)) return [];
     // Support several stored shapes and return an array of state_zone-like values for pre-checking
     const out = [];
@@ -307,9 +375,14 @@ function getStoredZoneSelections(userId){
     }
     // If numeric-first, map numeric values to zones by id or FIPS
     if (parsed.length && (typeof parsed[0] === 'number' || /^[0-9]+$/.test(String(parsed[0])))) {
+      // If zones aren't loaded yet, we can't map numeric IDs - return the raw values for later processing
+      if (zones.length === 0) {
+        return parsed.map(v => String(v));
+      }
       parsed.forEach(v => {
         const found = zones.find(z => Number(z.id) === Number(v) || String((z.raw && (z.raw.FIPS||z.raw.fips||z.FIPS||''))) === String(v));
         if (found) out.push(String(found.raw && (found.raw.STATE_ZONE||found.STATE_ZONE||found.STATEZONE) || found.ZONE || ''));
+        else out.push(String(v)); // Keep original if no mapping found
       });
       return Array.from(new Set(out)).filter(Boolean);
     }
@@ -322,13 +395,22 @@ function getStoredZoneSelections(userId){
         // skip following numeric FIPS if present
         if (i+1 < parsed.length && (/^[0-9]+$/.test(String(parsed[i+1])))) i++;
       } else if (typeof v === 'string' && /^[0-9]+$/.test(v)) {
-        // numeric string - try to map to zone
-        const found = zones.find(z => String((z.raw && (z.raw.FIPS||z.raw.fips||z.FIPS||''))) === String(v) || String(z.id) === String(v));
-        if (found) out.push(String(found.raw && (found.raw.STATE_ZONE||found.STATE_ZONE||found.STATEZONE) || found.ZONE || ''));
+        // numeric string - try to map to zone if zones are loaded
+        if (zones.length > 0) {
+          const found = zones.find(z => String((z.raw && (z.raw.FIPS||z.raw.fips||z.FIPS||''))) === String(v) || String(z.id) === String(v));
+          if (found) out.push(String(found.raw && (found.raw.STATE_ZONE||found.STATE_ZONE||found.STATEZONE) || found.ZONE || ''));
+          else out.push(String(v)); // Keep original if no mapping found
+        } else {
+          out.push(String(v)); // Keep original if zones not loaded
+        }
       }
     }
+    console.log('getStoredZoneSelections returning:', Array.from(new Set(out)).filter(Boolean));
     return Array.from(new Set(out)).filter(Boolean);
-  } catch(e){ return []; }
+  } catch(e){ 
+    console.error('getStoredZoneSelections error:', e); 
+    return []; 
+  }
 }
 
 // simple HTML escape for attributes/cell content
@@ -358,8 +440,8 @@ function renderUsers(){
               const f = String(it.FIPS || it.fips || '');
               const u = String(it.UGC || it.ugc || it.UGS || it.ZONE || '');
               const found = zones.find(z => (String((z.raw && (z.raw.FIPS||z.raw.fips||z.FIPS||'')) ) === f) || (String((z.ZONE||z.raw.ZONE||'')).toLowerCase() === (u||'').toLowerCase()));
-              if (found) return { state: found.STATE, county: (found.raw && (found.raw.COUNTY||found.raw.County||'') ) || '', fips: f, ugc: u };
-              return { state: '', county: '', fips: f, ugc: u };
+              if (found) return { state: found.STATE, name: found.NAME || '', county: (found.raw && (found.raw.COUNTY||found.raw.County||'') ) || '', fips: f, ugc: u };
+              return { state: '', name: '', county: '', fips: f, ugc: u };
             });
           } else if (za.length && typeof za[0] === 'string') {
             // stored as array of strings. Could be simple ['UGC','UGC',..] or alternating ['UGC','FIPS','UGC','FIPS',..]
@@ -378,20 +460,20 @@ function renderUsers(){
                   const code = String((z.ZONE || (z.raw && (z.raw.ZONE||z.raw.UGC||''))||'')).toLowerCase();
                   return sz === stateZoneVal.toLowerCase() || code === stateZoneVal.toLowerCase() || (z.raw && String(z.raw.FIPS||z.raw.fips||'') === fips);
                 });
-                if (found) zoneItems.push({ state: found.STATE || '', county: (found.raw && (found.raw.COUNTY||found.raw.County||'')) || '', fips: fips || (found.raw && (found.raw.FIPS||found.raw.fips||'')) || '', stateZone: stateZoneVal });
-                else zoneItems.push({ state: '', county: '', fips, stateZone: stateZoneVal });
+                if (found) zoneItems.push({ state: found.STATE || '', name: found.NAME || '', county: (found.raw && (found.raw.COUNTY||found.raw.County||'')) || '', fips: fips || (found.raw && (found.raw.FIPS||found.raw.fips||'')) || '', stateZone: stateZoneVal });
+                else zoneItems.push({ state: '', name: '', county: '', fips, stateZone: stateZoneVal });
               } else if (typeof cur === 'number' || /^[0-9]+$/.test(String(cur))) {
                 // numeric entry by itself: try to match by FIPS or id
                 const f = String(cur);
                 const found = zones.find(z => String((z.raw && (z.raw.FIPS||z.raw.fips||z.FIPS||''))) === f || String(z.id) === f);
-                if (found) zoneItems.push({ state: found.STATE || '', county: (found.raw && (found.raw.COUNTY||found.raw.County||'')) || '', fips: f, stateZone: found.raw && (found.raw.STATE_ZONE||found.STATE_ZONE||found.STATEZONE) || found.ZONE || '' });
+                if (found) zoneItems.push({ state: found.STATE || '', name: found.NAME || '', county: (found.raw && (found.raw.COUNTY||found.raw.County||'')) || '', fips: f, stateZone: found.raw && (found.raw.STATE_ZONE||found.STATE_ZONE||found.STATEZONE) || found.ZONE || '' });
               }
             }
           } else {
             // stored as ids
             zoneItems = za.map(id => {
               const z = zones.find(x => Number(x.id) === Number(id));
-              return z ? { state: z.STATE || '', county: (z.raw && (z.raw.COUNTY||z.raw.County||'')) || '', fips: (z.raw && (z.raw.FIPS||z.raw.fips||'')) || '', ugc: z.ZONE || (z.raw && (z.raw.ZONE||z.raw.UGC||'')) || '' } : null;
+              return z ? { state: z.STATE || '', name: z.NAME || '', county: (z.raw && (z.raw.COUNTY||z.raw.County||'')) || '', fips: (z.raw && (z.raw.FIPS||z.raw.fips||'')) || '', ugc: z.ZONE || (z.raw && (z.raw.ZONE||z.raw.UGC||'')) || '' } : null;
             }).filter(Boolean);
           }
         }
@@ -403,8 +485,10 @@ function renderUsers(){
       // prefer a meaningful STATE_ZONE value when available.
       let ugcVal = (it.ugc === undefined || it.ugc === null) ? (it.stateZone || '') : it.ugc;
       if (String(ugcVal).toLowerCase() === 'undefined') ugcVal = (it.stateZone || '');
+      // Convert UGC to uppercase to avoid lowercase display
+      ugcVal = String(ugcVal).toUpperCase();
       const fipsVal = (it.fips === undefined || it.fips === null) ? '' : it.fips;
-      return `${it.state || ''} | ${it.county || ''} | FIPS:${fipsVal} | UGC:${ugcVal}`;
+      return `${it.state || ''} | ${it.name || ''} | FIPS:${fipsVal} | UGC:${ugcVal}`;
     }).join('\n') : (Array.isArray(za) ? JSON.stringify(za) : '0 zones');
     let count = 0;
     if (Array.isArray(zoneItems) && zoneItems.length) {
@@ -449,8 +533,10 @@ function renderZones(stateFilter=''){
     const matchState = !stateQ || state === stateQ;
     return matchState;
   });
-
   const storedSelections = getStoredZoneSelections();
+  console.log('renderZones - currentSelections size:', currentSelections.size);
+  console.log('renderZones - storedSelections:', storedSelections);
+  console.log('renderZones - filtered zones count:', filtered.length);
 
   list.innerHTML = (filtered || []).map(z => {
     const id = z.id ?? z.idx ?? z.ID ?? z.IDX ?? 0;
@@ -458,7 +544,26 @@ function renderZones(stateFilter=''){
     const county = (z.raw && (z.raw.COUNTY || z.raw.County || '')) || '';
     const stateZone = (z.raw && (z.raw.STATE_ZONE || z.raw.STATEZONE || z.raw.STATE_ZONE_ID || z.STATE_ZONE || z.ZONE)) || '';
     const fips = (z.raw && (z.raw.FIPS || z.raw.fips || z.FIPS || '')) || '';
-    const checked = ((stateZone && storedSelections.includes(String(stateZone))) || storedSelections.includes(String(code))) ? 'checked' : '';
+    // Prefer live currentSelections (user changes in the modal). If empty and not explicitly cleared,
+    // fall back to stored selections loaded from the user record.
+    // Also check numeric ID and FIPS for stored selections that might not have been mapped yet
+    const isInCurrent = (currentSelections.size > 0) && 
+      ((stateZone && Array.from(currentSelections).some(sel => sel.toLowerCase() === String(stateZone).toLowerCase())) || 
+       Array.from(currentSelections).some(sel => sel.toLowerCase() === String(code).toLowerCase()) || 
+       currentSelections.has(String(id)) || 
+       currentSelections.has(String(fips)));
+    const isInStored = (currentSelections.size === 0 && !selectionsExplicitlyCleared) && 
+      ((stateZone && storedSelections.some(stored => stored.toLowerCase() === String(stateZone).toLowerCase())) || 
+       storedSelections.some(stored => stored.toLowerCase() === String(code).toLowerCase()) || 
+       storedSelections.includes(String(id)) || 
+       storedSelections.includes(String(fips)));
+    const checked = (isInCurrent || isInStored) ? 'checked' : '';
+    
+    if (checked === 'checked') {
+      console.log('✓ Zone will be checked:', stateZone, 'code:', code, 'id:', id, 'fips:', fips, 'reason:', isInCurrent ? 'currentSelections' : 'storedSelections');
+    } else if ((stateZone && String(stateZone).toLowerCase().includes('in0')) || (code && String(code).toLowerCase().includes('0'))) {
+      console.log('✗ Indiana zone NOT checked:', stateZone, 'code:', code, 'id:', id, 'fips:', fips, 'storedSelections:', storedSelections);
+    }
     return `
       <div class="zone-row" role="option" data-id="${id}" data-statezone="${htmlEscape(stateZone)}" data-ugc="${htmlEscape(code)}" data-fips="${htmlEscape(fips)}">
         <div style="width:4%"><input type="checkbox" class="zone-checkbox" value="${id}" data-statezone="${htmlEscape(stateZone)}" data-ugc="${htmlEscape(code)}" data-fips="${htmlEscape(fips)}" ${checked}></div>
@@ -469,6 +574,56 @@ function renderZones(stateFilter=''){
         <div class="col-fips">${htmlEscape(fips)}</div>
       </div>`;
   }).join('');
+
+  // Wire change handlers on the checkboxes so selections are tracked live.
+  try {
+    const boxes = list.querySelectorAll('input.zone-checkbox');
+    boxes.forEach(cb => {
+      cb.removeEventListener('change', zoneCheckboxHandler);
+      cb.addEventListener('change', zoneCheckboxHandler);
+    });
+  } catch(e){ /* ignore */ }
+}
+
+function zoneCheckboxHandler(ev){
+  try {
+    const cb = ev.target;
+    const statezone = (cb.dataset.statezone || '').toString();
+    const ugc = (cb.dataset.ugc || '').toString();
+    if (cb.checked) {
+      if (statezone) currentSelections.add(String(statezone));
+      if (ugc) currentSelections.add(String(ugc));
+    } else {
+      if (statezone) currentSelections.delete(String(statezone));
+      if (ugc) currentSelections.delete(String(ugc));
+    }
+    // Reset the flag since user is manually making selections
+    selectionsExplicitlyCleared = false;
+  } catch(e){ console.error('zoneCheckboxHandler', e); }
+}
+
+function clearAllZoneSelections(){
+  try {
+    currentSelections.clear();
+    selectionsExplicitlyCleared = true;
+    
+    // Directly uncheck all checkboxes in the DOM to ensure form submission sees them as unchecked
+    const checkboxes = document.querySelectorAll('#zoneList input.zone-checkbox');
+    checkboxes.forEach(cb => {
+      cb.checked = false;
+    });
+    
+    console.log('Cleared all zone selections - unchecked', checkboxes.length, 'checkboxes');
+  } catch(e){ console.error('clearAllZoneSelections', e); }
+}
+
+function isValidNtfyTopicName(topic) {
+  const trimmedTopic = topic.trim();
+  if (trimmedTopic === '') {
+    return false;
+  }
+  // Check if topic contains only allowed characters: letters, numbers, underscores, hyphens
+  return /^[A-Za-z0-9_-]+$/.test(trimmedTopic);
 }
 
 // ----- ADDED: loadUsers and loadZones (fixes "loadZones is not defined") -----
@@ -477,6 +632,10 @@ async function loadUsers(){
     const r = await fetch('/api/users', { credentials: 'include' });
     const j = await r.json();
     users = (j && j.data) ? j.data : [];
+    // Wait for zones to be loaded before rendering users to ensure proper tooltip formatting
+    if (zones.length === 0) {
+      await loadZones();
+    }
     renderUsers();
   } catch (err) {
     console.error('loadUsers error', err);
@@ -513,6 +672,13 @@ async function loadZones(){
     } catch (e) { console.error('populate state select failed', e); }
 
     renderZones(document.getElementById('zoneStateFilter')?.value || '');
+    
+    // Handle deferred selection initialization for users edited before zones loaded
+    if (window.pendingUserIdForSelection) {
+      initSelectionsForUser(window.pendingUserIdForSelection);
+      window.pendingUserIdForSelection = null;
+      renderZones(document.getElementById('zoneStateFilter')?.value || '');
+    }
   } catch (err) {
     console.error('loadZones error', err);
     zones = [];
@@ -584,7 +750,7 @@ function showZonePopup(cell, clientX, clientY, pinned = false){
     list.style.background = '#fbfdff';
     el.appendChild(list);
 
-    const items = (full || '').split(/,\s*/).filter(Boolean);
+    const items = (full || '').split(/\n|,\s*/).filter(Boolean);
     function renderList(filter){
       const q = (filter||'').toLowerCase().trim();
       list.innerHTML = items.filter(i => !q || i.toLowerCase().includes(q)).map(i => `<div style="padding:6px 4px;border-bottom:1px solid rgba(0,0,0,0.03)">${htmlEscape(i)}</div>`).join('');
@@ -657,6 +823,8 @@ function showAddModal(){
   document.getElementById('userForm').reset();
   document.getElementById('userId').value = '';
 
+  // clear live selections for a fresh Add form
+  currentSelections.clear();
   // populate zones if already loaded, otherwise start loading in background
   if (zones.length === 0) {
     loadZones().catch(err => { console.error('loadZones error', err); });
@@ -686,8 +854,10 @@ function editUser(id){
   document.getElementById('ntfyToken').value = u.NtfyToken || '';
   document.getElementById('ntfyTopic').value = u.NtfyTopic || '';
 
+  // Initialize live selections from stored user record so checkboxes persist
+  initSelectionsForUser(u.idx);
   if (zones.length === 0) {
-  loadZones().then(() => renderZones(document.getElementById('zoneStateFilter')?.value || '')).catch(err => {
+    loadZones().then(() => renderZones(document.getElementById('zoneStateFilter')?.value || '')).catch(err => {
       console.error('loadZones error', err);
       renderZones(document.getElementById('zoneStateFilter')?.value || '');
     });
@@ -737,6 +907,26 @@ document.addEventListener('DOMContentLoaded', () => {
   const addBtn = document.getElementById('addUserBtn');
   if (addBtn) addBtn.addEventListener('click', (e) => { e.preventDefault(); showAddModal(); });
 
+  // Wire Clear All Zones button
+  const clearAllBtn = document.getElementById('clearAllZonesBtn');
+  if (clearAllBtn) clearAllBtn.addEventListener('click', (e) => { 
+    e.preventDefault(); 
+    clearAllZoneSelections(); 
+  });
+
+  // Add real-time validation for NTFY topic field
+  const ntfyTopicInput = document.getElementById('ntfyTopic');
+  if (ntfyTopicInput) {
+    ntfyTopicInput.addEventListener('input', (e) => {
+      const topic = e.target.value.trim();
+      if (topic && !isValidNtfyTopicName(topic)) {
+        e.target.setCustomValidity('Topic names can only contain letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-)');
+      } else {
+        e.target.setCustomValidity('');
+      }
+    });
+  }
+
   // Zone popup handlers (show on hover, hide on leave). Use delegation so rows can be re-rendered.
   // Hover to preview (non-pinned), click to pin modal with backdrop and search
   document.addEventListener('pointerover', (ev) => {
@@ -770,6 +960,14 @@ document.addEventListener('DOMContentLoaded', () => {
   if (form) {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
+      
+      // Validate NTFY topic name
+      const ntfyTopic = document.getElementById('ntfyTopic').value.trim();
+      if (ntfyTopic && !isValidNtfyTopicName(ntfyTopic)) {
+        alert('Invalid NTFY Topic: Topic names can only contain letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-)');
+        return;
+      }
+      
       const id = document.getElementById('userId').value || '';
       const payload = {
         FirstName: document.getElementById('firstName').value || '',
@@ -819,13 +1017,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // existing startup: load users/zones
   try {
       if (typeof loadUsers === 'function' && typeof loadZones === 'function') {
+          // loadUsers will wait for zones to be loaded before rendering
           loadUsers();
-          loadZones();
           return;
       }
   } catch (e) { console.error('startup check failed', e); }
   setTimeout(() => {
-      try { if (typeof loadUsers === 'function') loadUsers(); if (typeof loadZones === 'function') loadZones(); } catch (err) { console.error('startup load error', err); }
+      try { if (typeof loadUsers === 'function') loadUsers(); } catch (err) { console.error('startup load error', err); }
   }, 100);
 });
 </script>
