@@ -48,11 +48,14 @@ A Dockerized PHP 8.3 application that monitors weather.gov alerts, stores them i
 - **Email Validation**: Unique email addresses enforced at database level
 
 ### Docker Stack
-- **alerts**: Main application container running the scheduler (port 8080)
-- **sqlitebrowser**: Web-based SQLite database browser (port 3000)
-- **dozzle**: Real-time Docker log viewer (port 9999)
+- **alerts**: Main application container running the web interface (port 8080)
+- **scheduler**: Background service that polls weather.gov and processes alerts
+- **sqlitebrowser**: Web-based SQLite database browser (port 3000, standalone only)
+- **dozzle**: Real-time Docker log viewer (port 9999, standalone only)
 
 ## Quick Start
+
+> **Using Traefik?** If you have an existing Traefik and Dozzle setup, see the [Traefik Integration Guide](TRAEFIK.md) for instructions on integrating with your existing infrastructure.
 
 ### 1. Prerequisites
 - Docker and Docker Compose installed
@@ -142,10 +145,16 @@ See [README.DEV.md](README.DEV.md) for:
 - Troubleshooting
 
 See [INSTALL.md](INSTALL.md) for:
-- Detailed installation instructions
+- Detailed standalone installation instructions
 - Docker configuration
 - SSL certificate setup
 - Troubleshooting
+
+See [TRAEFIK.md](TRAEFIK.md) for:
+- Traefik reverse proxy integration
+- Using existing Dozzle instance
+- Custom domain configuration
+- Advanced networking
 
 See [documentation/INDEX.md](documentation/INDEX.md) for:
 - Complete architecture documentation

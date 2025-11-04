@@ -9,11 +9,18 @@ services:
     volumes:
       - ./data:/data
       - ./logs:/logs
-    ports:
-      - "8080:8080"
-    depends_on:
-      - dozzle
-    command: ["php","-S","0.0.0.0:8080","-t","public"]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.alerts.entrypoints=websecure
+      - traefik.http.routers.alerts.rule=Host(`noaa.jafcp.com`)
+      - traefik.http.routers.alerts.middlewares=simpleAuth
+      - traefik.http.middlewares.simpleAuth.basicauth.users=k9barry:$$apr1$$Gvf0.vYy$$8WOCVhhCLhtIvz5wqktX20
+      - traefik.http.services.alerts.loadbalancer.server.scheme=http
+      - traefik.http.services.alerts.loadbalancer.server.port=8080
+      - diun.enable=true
+    networks:
+      - traefik
+    command: ["php", "-S", "0.0.0.0:8080", "-t", "public"]
     restart: unless-stopped
 
   sqlitebrowser:
@@ -26,17 +33,8 @@ services:
     volumes:
       # Mount the full data directory read-only so the file can appear after container start
       - ./data:/config
-    ports:
-      - "3000:3000"
-    restart: unless-stopped
-
-  dozzle:
-    image: amir20/dozzle:latest
-    container_name: dozzle
-    ports:
-      - "9999:8080"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - traefik
     restart: unless-stopped
 
   scheduler:
@@ -49,11 +47,15 @@ services:
     volumes:
       - ./data:/data
       - ./logs:/logs
+    labels:
+      - diun.enable=true
+    networks:
+      - traefik
     depends_on:
       - alerts
     command: ["php", "scripts/scheduler.php"]
     restart: unless-stopped
 
 networks:
-  default:
-    driver: bridge
+  traefik:
+    external: true

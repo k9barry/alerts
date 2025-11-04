@@ -11,7 +11,16 @@ This guide provides detailed instructions for installing and configuring the Ale
   - Accessing weather.gov API
   - Sending notifications (Pushover/ntfy)
 
-## Installation Steps
+## Deployment Options
+
+This application supports two deployment modes:
+
+1. **Standalone Deployment**: All services run independently with exposed ports (see below)
+2. **Traefik Integration**: Integrate with existing Traefik reverse proxy and Dozzle (see [TRAEFIK.md](TRAEFIK.md))
+
+> **Note**: If you already have Traefik and Dozzle containers running, follow the [Traefik Integration Guide](TRAEFIK.md) instead of this standalone installation.
+
+## Installation Steps (Standalone)
 
 ### 1. Clone the Repository
 
