@@ -14,8 +14,8 @@ services:
       - traefik.http.routers.alerts.entrypoints=websecure
       - traefik.http.routers.alerts.rule=Host(`noaa.jafcp.com`)
       - traefik.http.routers.alerts.middlewares=simpleAuth
-      # Basic auth credentials (hashed with APR1) - matches existing infrastructure
-      # To generate new credentials: htpasswd -nb username password | sed 's/$/$$$/g'
+      # Basic auth credentials (hashed APR1, not plaintext) - configured to match existing infrastructure
+      # For production deployments with different credentials, generate new: htpasswd -nb username password | sed 's/\$/\$\$/g'
       - traefik.http.middlewares.simpleAuth.basicauth.users=k9barry:$$apr1$$Gvf0.vYy$$8WOCVhhCLhtIvz5wqktX20
       - traefik.http.services.alerts.loadbalancer.server.scheme=http
       - traefik.http.services.alerts.loadbalancer.server.port=8080
