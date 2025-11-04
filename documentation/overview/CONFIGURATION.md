@@ -253,10 +253,12 @@ Config::initFromEnv();
 - **Purpose**: Topic name for publishing notifications
 - **Example**: `NTFY_TOPIC="weather_alerts_home"`
 - **Required**: Yes (if NTFY_ENABLED=true)
+- **Character Set**: Letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-) only
 - **Notes**:
   - Choose unique topic name
   - Public topics are visible to anyone who guesses the name
   - Use authentication for security
+  - Invalid characters will cause configuration errors
 
 ### NTFY_TOKEN
 - **Type**: string

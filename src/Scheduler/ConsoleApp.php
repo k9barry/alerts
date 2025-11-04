@@ -76,9 +76,76 @@ final class ConsoleApp
                             LoggerFactory::get()->error('Vacuum error', ['error' => $e->getMessage()]);
                         }
                         $lastVacuum = time();
+                        // Run user backup rotation alongside scheduled maintenance
+                        try {
+                            $app = $this->getApplication();
+                            if ($app) {
+                                $cmd = $app->find('rotate-user-backups');
+                                if ($cmd) {
+                                    $cmd->run(new \Symfony\Component\Console\Input\ArrayInput([]), $output);
+                                }
+                            }
+                        } catch (\Throwable $e) {
+                            LoggerFactory::get()->error('rotate-user-backups error', ['error' => $e->getMessage()]);
+                        }
                     }
 
                     sleep($pollSecs);
+                }
+            }
+        });
+
+        // Rotate user backups: move into data/users_backup and prune to the 10 most recent files
+        $app->add(new class('rotate-user-backups') extends Command {
+            protected static $defaultName = 'rotate-user-backups';
+            protected function execute(InputInterface $input, OutputInterface $output): int
+            {
+                try {
+                    $dbPath = \App\Config::$dbPath;
+                    $dataDir = dirname($dbPath);
+                    $targetDir = $dataDir . '/users_backup';
+                    if (!is_dir($dataDir)) {
+                        $output->writeln("Data directory does not exist: {$dataDir}");
+                        return Command::FAILURE;
+                    }
+                    if (!is_dir($targetDir)) {
+                        if (!mkdir($targetDir, 0755, true) && !is_dir($targetDir)) {
+                            $output->writeln("Failed to create target directory: {$targetDir}");
+                            return Command::FAILURE;
+                        }
+                    }
+                    $pattern = $dataDir . '/users_backup_*.json';
+                    $files = glob($pattern);
+                    if (!$files) {
+                        $output->writeln("No users_backup_*.json files found in {$dataDir}");
+                        return Command::SUCCESS;
+                    }
+                    foreach ($files as $f) {
+                        $base = basename($f);
+                        $dest = $targetDir . '/' . $base;
+                        if (realpath($f) === realpath($dest)) continue;
+                        if (!@rename($f, $dest)) {
+                            if (!@copy($f, $dest)) {
+                                $output->writeln("Failed to move {$f} to {$dest}");
+                                continue;
+                            }
+                            @unlink($f);
+                        }
+                        $output->writeln("Moved {$base} -> users_backup/");
+                    }
+                    $all = glob($targetDir . '/users_backup_*.json');
+                    usort($all, function($a,$b){ return filemtime($b) <=> filemtime($a); });
+                    if (count($all) > 10) {
+                        $toDelete = array_slice($all, 10);
+                        foreach ($toDelete as $del) {
+                            if (@unlink($del)) $output->writeln("Pruned " . basename($del));
+                        }
+                    }
+                    $output->writeln('Done. users_backup contains up to 10 recent backups.');
+                    return Command::SUCCESS;
+                } catch (\Throwable $e) {
+                    $output->writeln('rotate-user-backups error: ' . $e->getMessage());
+                    return Command::FAILURE;
                 }
             }
         });
