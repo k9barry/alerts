@@ -42,7 +42,7 @@ if (preg_match('#^/api/users(?:/(\d+))?$#', $requestUri, $m)) {
             }
             // server-side normalize ZoneAlert to a consistent JSON array of strings
             $zoneAlert = ZoneAlertHelper::normalizeForSave($data['ZoneAlert'] ?? []);
-            $stmt = $pdo->prepare("INSERT INTO users (FirstName, LastName, Email, Timezone, PushoverUser, PushoverToken, NtfyUser, NtfyPassword, NtfyToken, ZoneAlert) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt = $pdo->prepare("INSERT INTO users (FirstName, LastName, Email, Timezone, PushoverUser, PushoverToken, NtfyUser, NtfyPassword, NtfyToken, NtfyTopic, ZoneAlert) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $stmt->execute([
                 $data['FirstName'] ?? '',
                 $data['LastName'] ?? '',
@@ -53,6 +53,7 @@ if (preg_match('#^/api/users(?:/(\d+))?$#', $requestUri, $m)) {
                 $data['NtfyUser'] ?? '',
                 $data['NtfyPassword'] ?? '',
                 $data['NtfyToken'] ?? '',
+                $data['NtfyTopic'] ?? '',
                 $zoneAlert
             ]);
             backupUsersTable($pdo);
@@ -74,7 +75,7 @@ if (preg_match('#^/api/users(?:/(\d+))?$#', $requestUri, $m)) {
             }
             // server-side normalize ZoneAlert to a consistent JSON array of strings
             $zoneAlert = ZoneAlertHelper::normalizeForSave($data['ZoneAlert'] ?? []);
-            $stmt = $pdo->prepare("UPDATE users SET FirstName=?, LastName=?, Email=?, Timezone=?, PushoverUser=?, PushoverToken=?, NtfyUser=?, NtfyPassword=?, NtfyToken=?, ZoneAlert=?, UpdatedAt=CURRENT_TIMESTAMP WHERE idx=?");
+            $stmt = $pdo->prepare("UPDATE users SET FirstName=?, LastName=?, Email=?, Timezone=?, PushoverUser=?, PushoverToken=?, NtfyUser=?, NtfyPassword=?, NtfyToken=?, NtfyTopic=?, ZoneAlert=?, UpdatedAt=CURRENT_TIMESTAMP WHERE idx=?");
             $stmt->execute([
                 $data['FirstName'] ?? '',
                 $data['LastName'] ?? '',
@@ -85,6 +86,7 @@ if (preg_match('#^/api/users(?:/(\d+))?$#', $requestUri, $m)) {
                 $data['NtfyUser'] ?? '',
                 $data['NtfyPassword'] ?? '',
                 $data['NtfyToken'] ?? '',
+                $data['NtfyTopic'] ?? '',
                 $zoneAlert,
                 $userId
             ]);
@@ -250,6 +252,8 @@ window.closeModal = closeModal;
       </div>
 
       <div class="form-group"><label>Ntfy Token<input id="ntfyToken" placeholder="Ntfy token"></label></div>
+
+      <div class="form-group"><label>Ntfy Topic<input id="ntfyTopic" placeholder="Ntfy topic (optional)"></label></div>
 
       <div class="form-group">
         <label style="display:block;margin-bottom:8px;font-weight:600">State</label>
@@ -680,6 +684,7 @@ function editUser(id){
   document.getElementById('ntfyUser').value = u.NtfyUser || '';
   document.getElementById('ntfyPassword').value = u.NtfyPassword || '';
   document.getElementById('ntfyToken').value = u.NtfyToken || '';
+  document.getElementById('ntfyTopic').value = u.NtfyTopic || '';
 
   if (zones.length === 0) {
   loadZones().then(() => renderZones(document.getElementById('zoneStateFilter')?.value || '')).catch(err => {
@@ -776,6 +781,7 @@ document.addEventListener('DOMContentLoaded', () => {
         NtfyUser: document.getElementById('ntfyUser').value || '',
         NtfyPassword: document.getElementById('ntfyPassword').value || '',
         NtfyToken: document.getElementById('ntfyToken').value || '',
+        NtfyTopic: document.getElementById('ntfyTopic').value || '',
         // Build ZoneAlert as alternating [STATE_ZONE, FIPS, STATE_ZONE, FIPS, ...]
         ZoneAlert: (function(){
           const checked = Array.from(document.querySelectorAll('#zoneList input.zone-checkbox:checked') || []);

@@ -121,10 +121,14 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS users (
   NtfyUser TEXT,
   NtfyPassword TEXT,
   NtfyToken TEXT,
+  NtfyTopic TEXT,
   ZoneAlert TEXT DEFAULT '[]',
   CreatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
   UpdatedAt TEXT DEFAULT CURRENT_TIMESTAMP
 )");
+
+// Add NtfyTopic column if it doesn't exist (for existing databases)
+$ensureColumn($pdo, 'users', 'NtfyTopic TEXT');
 
 // Create index for users email
 $pdo->exec("CREATE INDEX IF NOT EXISTS idx_users_email ON users(Email)");

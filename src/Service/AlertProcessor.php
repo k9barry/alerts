@@ -124,8 +124,12 @@ final class AlertProcessor
               $pushoverReqId = $res['request_id'] ?? null;
             }
             if ($this->ntfy && $this->ntfy->isEnabled()) {
-              // use per-user send which prefers user's NtfyToken/NtfyUser+Password
-              $this->ntfy->sendForUser($title, $headline, ['priority' => 3, 'tags' => ['warning'], 'click' => $click], $u);
+              // Get zone names for title prefix
+              $zoneNames = $this->getZoneNamesForAlert($alertIds);
+              $zoneTitlePrefix = !empty($zoneNames) ? implode(', ', array_slice($zoneNames, 0, 3)) : '';
+              
+              // use per-user send which prefers user's NtfyToken/NtfyUser+Password and NtfyTopic
+              $this->ntfy->sendForUserWithTopic($title, $headline, ['priority' => 3, 'tags' => ['warning'], 'click' => $click], $u, $zoneTitlePrefix);
               $channels[] = ['channel' => 'ntfy', 'result' => ['status' => 'sent']];
             }
 
@@ -148,4 +152,30 @@ final class AlertProcessor
         }
       }
     }
+
+  /**
+   * Get zone names for the given alert IDs to use as title prefix
+   * @param array $alertIds Array of UGC zone codes
+   * @return array Array of zone names
+   */
+  private function getZoneNamesForAlert(array $alertIds): array
+  {
+    if (empty($alertIds)) {
+      return [];
+    }
+
+    try {
+      $pdo = \App\DB\Connection::get();
+      $placeholders = str_repeat('?,', count($alertIds) - 1) . '?';
+      $stmt = $pdo->prepare("SELECT DISTINCT NAME FROM zones WHERE STATE_ZONE IN ($placeholders) OR ZONE IN ($placeholders)");
+      $stmt->execute(array_merge($alertIds, $alertIds));
+      return $stmt->fetchAll(\PDO::FETCH_COLUMN);
+    } catch (\Exception $e) {
+      LoggerFactory::get()->error('Failed to get zone names', [
+        'alertIds' => $alertIds,
+        'error' => $e->getMessage()
+      ]);
+      return [];
+    }
+  }
 }
