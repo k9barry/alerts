@@ -56,6 +56,8 @@ labels:
   - diun.enable=true
 ```
 
+> **Note**: The basic auth credentials shown match the existing infrastructure configuration. The password is hashed using Apache's APR1 algorithm. To generate your own credentials, use: `htpasswd -nb username password | sed 's/\$/\$\$/g'`
+
 **Key Labels Explained:**
 - `traefik.enable=true`: Enables Traefik routing for this container
 - `traefik.http.routers.alerts.entrypoints=websecure`: Uses HTTPS (port 443)
