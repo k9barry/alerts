@@ -9,7 +9,7 @@ use DateTimeZone;
 use Throwable;
 use App\Service\MessageBuilderTrait;
 use App\Service\NtfyNotifier;
-use App\Service\ZoneAlertHelper;
+
 use App\Service\PushoverNotifier;
 
 /**
@@ -110,7 +110,7 @@ final class AlertProcessor
 
           $anyMatch = false;
           foreach ($users as $u) {
-            $userZoneIds = ZoneAlertHelper::parse($u['ZoneAlert'] ?? '[]');
+            $userZoneIds = $this->parseUserZoneAlert($u['ZoneAlert'] ?? '[]');
             if (empty($userZoneIds)) continue;
             if (empty(array_intersect($alertIds, $userZoneIds))) continue;
             $anyMatch = true;
@@ -177,5 +177,39 @@ final class AlertProcessor
       ]);
       return [];
     }
+  }
+
+  /**
+   * Parse user's ZoneAlert JSON string into array of zone identifiers.
+   * Converts to uppercase for STATE_ZONE format for consistent matching.
+   *
+   * @param string $zoneAlert JSON string from user record
+   * @return array Array of zone identifiers
+   */
+  private function parseUserZoneAlert(string $zoneAlert): array
+  {
+    if (trim($zoneAlert) === '' || trim($zoneAlert) === '[]') {
+      return [];
+    }
+
+    $decoded = @json_decode($zoneAlert, true);
+    if (!is_array($decoded)) {
+      return [];
+    }
+
+    $result = [];
+    foreach ($decoded as $zone) {
+      $zone = trim((string)$zone);
+      if ($zone === '') continue;
+      
+      // Convert STATE_ZONE format to uppercase for consistent matching
+      if (preg_match('/^[a-z]{2,3}c?\d+$/i', $zone)) {
+        $result[] = strtoupper($zone);
+      } else {
+        $result[] = $zone; // Keep FIPS codes as-is
+      }
+    }
+
+    return array_unique($result);
   }
 }

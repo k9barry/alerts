@@ -2,7 +2,7 @@
 require __DIR__ . '/../src/bootstrap.php';
 
 use App\DB\Connection;
-use App\Service\ZoneAlertHelper;
+
 use App\Service\NtfyNotifier;
 
 $pdo = Connection::get();
@@ -42,7 +42,7 @@ if (preg_match('#^/api/users(?:/(\d+))?$#', $requestUri, $m)) {
                 }
             }
             // server-side normalize ZoneAlert to a consistent JSON array of strings
-            $zoneAlert = ZoneAlertHelper::normalizeForSave($data['ZoneAlert'] ?? []);
+            $zoneAlert = normalizeZoneAlertForSave($data['ZoneAlert'] ?? []);
             
             // Validate NtfyTopic if provided
             $ntfyTopic = $data['NtfyTopic'] ?? '';
@@ -84,7 +84,7 @@ if (preg_match('#^/api/users(?:/(\d+))?$#', $requestUri, $m)) {
                 }
             }
             // server-side normalize ZoneAlert to a consistent JSON array of strings
-            $zoneAlert = ZoneAlertHelper::normalizeForSave($data['ZoneAlert'] ?? []);
+            $zoneAlert = normalizeZoneAlertForSave($data['ZoneAlert'] ?? []);
             
             // Validate NtfyTopic if provided
             $ntfyTopic = $data['NtfyTopic'] ?? '';
@@ -162,6 +162,31 @@ if ($requestUri === '/api/zones' && $method === 'GET') {
         echo json_encode(['success' => false, 'error' => $e->getMessage()]);
         exit;
     }
+}
+
+/**
+ * Normalize ZoneAlert data for database storage.
+ * Converts to uppercase for STATE_ZONE format and returns JSON string.
+ */
+function normalizeZoneAlertForSave(array $zoneData): string {
+    if (empty($zoneData)) {
+        return json_encode([]);
+    }
+
+    $normalized = [];
+    foreach ($zoneData as $zone) {
+        $zone = trim((string)$zone);
+        if ($zone === '') continue;
+        
+        // Convert STATE_ZONE format to uppercase for consistency
+        if (preg_match('/^[a-z]{2,3}c?\d+$/i', $zone)) {
+            $normalized[] = strtoupper($zone);
+        } else {
+            $normalized[] = $zone; // Keep FIPS codes as-is
+        }
+    }
+
+    return json_encode(array_values(array_unique($normalized)));
 }
 
 if (strpos($requestUri, '/api/') !== 0) {
