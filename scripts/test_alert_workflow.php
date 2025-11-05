@@ -216,15 +216,18 @@ try {
     $results = [];
     
     // Send via Pushover if configured
-    if (Config::$pushoverEnabled && !empty($selectedUser['PushoverUser'])) {
+    $pushoverUser = trim($selectedUser['PushoverUser'] ?? '');
+    $pushoverToken = trim($selectedUser['PushoverToken'] ?? '');
+    
+    if (Config::$pushoverEnabled && !empty($pushoverUser) && !empty($pushoverToken)) {
         echo "  Sending via Pushover...\n";
         $logger->info("Attempting Pushover notification");
         
         try {
             $pushover = new PushoverNotifier();
             $result = $pushover->sendAlert(
-                $selectedUser['PushoverUser'],
-                $selectedUser['PushoverToken'] ?? Config::$pushoverToken,
+                $pushoverUser,
+                $pushoverToken,
                 $event,
                 $message,
                 $alertUrl
@@ -256,33 +259,51 @@ try {
             $results['pushover'] = 'ERROR: ' . $e->getMessage();
         }
     } else {
-        $reason = !Config::$pushoverEnabled ? 'disabled' : 'not configured for user';
+        // Determine the specific reason why Pushover was skipped
+        if (!Config::$pushoverEnabled) {
+            $reason = 'disabled';
+        } elseif (empty($pushoverUser)) {
+            $reason = 'missing PushoverUser';
+        } elseif (empty($pushoverToken)) {
+            $reason = 'missing PushoverToken';
+        } else {
+            $reason = 'not configured for user';
+        }
         echo "  ⊘ Pushover skipped ({$reason})\n";
         $logger->info("Pushover skipped", ['reason' => $reason]);
         $results['pushover'] = 'SKIPPED: ' . $reason;
     }
     
     // Send via Ntfy if configured
-    if (Config::$ntfyEnabled && !empty($selectedUser['NtfyTopic'])) {
+    $ntfyTopic = trim($selectedUser['NtfyTopic'] ?? '');
+    $ntfyUser = !empty($selectedUser['NtfyUser']) ? trim($selectedUser['NtfyUser']) : null;
+    $ntfyPassword = !empty($selectedUser['NtfyPassword']) ? trim($selectedUser['NtfyPassword']) : null;
+    $ntfyToken = !empty($selectedUser['NtfyToken']) ? trim($selectedUser['NtfyToken']) : null;
+    
+    if (Config::$ntfyEnabled && !empty($ntfyTopic)) {
         echo "  Sending via Ntfy...\n";
-        $logger->info("Attempting Ntfy notification");
+        $logger->info("Attempting Ntfy notification", [
+            'topic' => $ntfyTopic,
+            'has_token' => !empty($ntfyToken),
+            'has_user_pass' => !empty($ntfyUser) && !empty($ntfyPassword)
+        ]);
         
         try {
             $ntfy = new NtfyNotifier();
             $result = $ntfy->sendAlert(
-                $selectedUser['NtfyTopic'],
+                $ntfyTopic,
                 $event,
                 $message,
                 $alertUrl,
-                $selectedUser['NtfyUser'] ?? null,
-                $selectedUser['NtfyPassword'] ?? null,
-                $selectedUser['NtfyToken'] ?? null
+                $ntfyUser,
+                $ntfyPassword,
+                $ntfyToken
             );
             
             if ($result['success']) {
                 echo "    ✓ Ntfy sent successfully\n";
                 $logger->info("Ntfy notification sent", [
-                    'topic' => $selectedUser['NtfyTopic'],
+                    'topic' => $ntfyTopic,
                     'user' => $selectedUser['Email']
                 ]);
                 $results['ntfy'] = 'SUCCESS';
@@ -304,7 +325,14 @@ try {
             $results['ntfy'] = 'ERROR: ' . $e->getMessage();
         }
     } else {
-        $reason = !Config::$ntfyEnabled ? 'disabled' : 'not configured for user';
+        // Determine the specific reason why Ntfy was skipped
+        if (!Config::$ntfyEnabled) {
+            $reason = 'disabled';
+        } elseif (empty($ntfyTopic)) {
+            $reason = 'missing NtfyTopic';
+        } else {
+            $reason = 'not configured for user';
+        }
         echo "  ⊘ Ntfy skipped ({$reason})\n";
         $logger->info("Ntfy skipped", ['reason' => $reason]);
         $results['ntfy'] = 'SKIPPED: ' . $reason;
