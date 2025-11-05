@@ -5,6 +5,10 @@ set -euo pipefail
 # Ensure we are in the app directory
 cd /app
 
+# Check if zones data needs to be downloaded
+echo "Checking zones data..."
+php scripts/check_zones_data.php
+
 echo "Running database migrations..."
 php scripts/migrate.php
 
