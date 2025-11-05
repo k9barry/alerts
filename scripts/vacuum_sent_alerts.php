@@ -20,8 +20,8 @@ try {
     $db = Connection::get();
     
     // Get table size before vacuum
-    $stmt = $db->query("SELECT COUNT(*) as count FROM sent_alerts");
-    $count = $stmt->fetch(PDO::FETCH_ASSOC)['count'] ?? 0;
+    $stmt = $db->query("SELECT COUNT(*) FROM sent_alerts");
+    $count = $stmt->fetchColumn() ?: 0;
     
     $logger->info('Starting vacuum of sent_alerts table', ['record_count' => $count]);
     echo "Vacuuming sent_alerts table (currently {$count} records)...\n";
@@ -31,10 +31,12 @@ try {
     // a different approach: delete old records to free up space
     $db->beginTransaction();
     
-    // Delete records older than 90 days (configurable)
+    // Delete records older than configurable days (default 90, min 1, max 365)
     $cutoffDays = (int)($_ENV['VACUUM_SENT_ALERTS_DAYS'] ?? 90);
-    $stmt = $db->prepare("DELETE FROM sent_alerts WHERE notified_at < datetime('now', '-{$cutoffDays} days')");
-    $stmt->execute();
+    $cutoffDays = max(1, min(365, $cutoffDays)); // Clamp between 1 and 365
+    
+    $stmt = $db->prepare("DELETE FROM sent_alerts WHERE notified_at < datetime('now', ? || ' days')");
+    $stmt->execute(['-' . $cutoffDays]);
     $deleted = $stmt->rowCount();
     
     $db->commit();
