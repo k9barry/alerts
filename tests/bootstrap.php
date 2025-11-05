@@ -27,4 +27,3 @@ App\Config::$ntfyPassword = null;
 App\Config::$ntfyToken = null;
 App\Config::$ntfyTitlePrefix = 'TEST';
 App\Config::$timezone = 'UTC';
-App\Config::$weatherAlerts = [];
