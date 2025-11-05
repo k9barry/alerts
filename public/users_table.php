@@ -905,7 +905,7 @@ async function deleteUser(id){
 document.addEventListener('DOMContentLoaded', () => {
   const btn = document.getElementById('cancelUserBtn');
   if (btn) btn.addEventListener('click', (e) => { e.preventDefault(); closeModal(); });
-  // Removed free-text zone filter; keep state selector only
+  // State filter change handler
   const zsf = document.getElementById('zoneStateFilter');
   if (zsf) zsf.addEventListener('change', (e) => renderZones(e.target.value || ''));
   // Delegate Edit/Delete button clicks to avoid inline onclicks and startup race conditions

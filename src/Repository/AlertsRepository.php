@@ -8,17 +8,51 @@ use PDO;
  * AlertsRepository
  *
  * Database access helpers for alert tables (incoming_alerts, pending_alerts, active_alerts, sent_alerts).
+ * 
+ * This repository provides methods for managing weather alerts through their lifecycle:
+ * - incoming_alerts: Latest snapshot from API
+ * - active_alerts: Current active alerts being tracked
+ * - pending_alerts: New alerts queued for notification
+ * - sent_alerts: Historical record of sent notifications
+ * 
+ * @package App\Repository
+ * @author  Alerts Team
+ * @license MIT
  */
 final class AlertsRepository
 {
+    /**
+     * Database connection
+     *
+     * @var PDO
+     */
     private PDO $db;
 
+    /**
+     * Constructor - initializes database connection
+     *
+     * @return void
+     */
     public function __construct()
     {
         $this->db = Connection::get();
     }
 
-  // Replace snapshot of incoming alerts with provided set (guarded by caller for empties)
+    /**
+     * Replace the entire incoming_alerts table with a new set of alerts
+     * 
+     * This method performs a complete replacement:
+     * 1. Deletes all existing incoming_alerts
+     * 2. Inserts all provided alerts using INSERT OR REPLACE to handle duplicates
+     * 3. Wraps operations in a transaction for atomicity
+     * 
+     * The method expects alerts in weather.gov API format with properties nested.
+     * It extracts and normalizes the alert data before storing.
+     * 
+     * @param array $alerts Array of alert objects in weather.gov format
+     * @return void
+     * @throws \Throwable If database operation fails (transaction will rollback)
+     */
     public function replaceIncoming(array $alerts): void
     {
       if (empty($alerts)) {
@@ -71,16 +105,35 @@ final class AlertsRepository
         }
     }
 
+    /**
+     * Get all alert IDs from incoming_alerts table
+     * 
+     * @return array Array of alert ID strings
+     */
     public function getIncomingIds(): array
     {
         return $this->db->query('SELECT id FROM incoming_alerts')->fetchAll(PDO::FETCH_COLUMN) ?: [];
     }
 
+    /**
+     * Get all alert IDs from active_alerts table
+     * 
+     * @return array Array of alert ID strings
+     */
     public function getActiveIds(): array
     {
         return $this->db->query('SELECT id FROM active_alerts')->fetchAll(PDO::FETCH_COLUMN) ?: [];
     }
 
+    /**
+     * Queue new alerts to pending_alerts table
+     * 
+     * Compares incoming_alerts against active_alerts to find new alerts
+     * that haven't been processed yet. New alerts are inserted into
+     * pending_alerts using INSERT OR IGNORE to handle duplicates.
+     * 
+     * @return int Number of alerts queued
+     */
     public function queuePendingForNew(): int
     {
         $incomingIds = $this->getIncomingIds();
@@ -133,6 +186,18 @@ final class AlertsRepository
         return $count;
     }
 
+    /**
+     * Replace active_alerts with all alerts from incoming_alerts
+     * 
+     * This method synchronizes the active_alerts table to match the current
+     * incoming_alerts snapshot. It's called after processing new alerts to
+     * update the baseline for future comparisons.
+     * 
+     * Operations are wrapped in a transaction for atomicity.
+     * 
+     * @return void
+     * @throws \Throwable If database operation fails (transaction will rollback)
+     */
     public function replaceActiveWithIncoming(): void
     {
         $this->db->beginTransaction();
@@ -154,17 +219,39 @@ final class AlertsRepository
         }
     }
 
+    /**
+     * Get all pending alerts awaiting notification
+     * 
+     * @return array Array of alert rows as associative arrays
+     */
     public function getPending(): array
     {
       return $this->db->query('SELECT * FROM pending_alerts')->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
+    /**
+     * Delete a specific alert from pending_alerts by ID
+     * 
+     * @param string $id Alert ID to delete
+     * @return void
+     */
     public function deletePendingById(string $id): void
     {
         $stmt = $this->db->prepare('DELETE FROM pending_alerts WHERE id = :id');
         $stmt->execute([':id' => $id]);
     }
 
+    /**
+     * Insert a notification result into sent_alerts table
+     * 
+     * Records that a notification was attempted for an alert, including
+     * success/failure status, error messages, and attempt count.
+     * Uses INSERT OR REPLACE to handle retries.
+     * 
+     * @param array $row Alert data from pending_alerts
+     * @param array $result Notification result with keys: status, attempts, error, request_id, user_id
+     * @return void
+     */
   public function insertSentResult(array $row, array $result): void
   {
     $stmt = $this->db->prepare('INSERT OR REPLACE INTO sent_alerts (

@@ -75,8 +75,10 @@ Edit `.env` and set at minimum:
 docker compose up --build -d
 ```
 
+The application will automatically check for and download the NWS weather zones data file during startup if it's not present.
+
 ### 4. Load Weather Zones (Optional)
-Download NWS weather zones data:
+If automatic download fails or you prefer manual control, download NWS weather zones data:
 ```sh
 docker exec alerts php scripts/download_zones.php
 ```
@@ -105,6 +107,19 @@ Test the system with a single poll cycle:
 ```sh
 php scripts/oneshot_poll.php
 ```
+
+### Test Alert Workflow
+Test the complete alert workflow interactively with a random alert from the API:
+```sh
+docker exec -it alerts php scripts/test_alert_workflow.php
+```
+
+This will:
+1. Fetch current alerts from weather.gov
+2. Select a random alert for testing
+3. Prompt you to choose a user to notify
+4. Send the test alert via configured channels
+5. Report results with detailed logging to Dozzle
 
 ### Database Migrations
 Run database migrations manually:
