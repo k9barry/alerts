@@ -3,7 +3,22 @@
  * Check and download zones data if not present
  * 
  * This script checks if the zones data file exists and downloads it if necessary.
- * It's designed to be run automatically during Docker container startup.
+ * It's designed to be run automatically during Docker container startup before
+ * database migrations are executed.
+ * 
+ * The script is non-blocking - it will not fail if the download fails, allowing
+ * the container to start even without zones data. Users can download the data
+ * manually later if needed.
+ * 
+ * Usage:
+ *   php scripts/check_zones_data.php
+ * 
+ * Environment Variables:
+ *   - ZONES_DATA_URL: URL to download zones data from
+ *   - DB_PATH: Database path (determines data directory location)
+ * 
+ * Exit Codes:
+ *   - 0: Success (file exists or downloaded, or failed gracefully)
  * 
  * @package Alerts
  * @author  Alerts Team

@@ -7,7 +7,35 @@
  * for the test message and prompts for which user should receive the test.
  * All results are logged to Dozzle in a clear report format.
  * 
- * Usage: php scripts/test_alert_workflow.php
+ * Workflow Steps:
+ *   1. Fetch active alerts from weather.gov API
+ *   2. Select a random alert for testing
+ *   3. Retrieve list of configured users
+ *   4. Prompt for user selection (interactive)
+ *   5. Build and send test notification message
+ *   6. Report results to console and logs
+ * 
+ * Usage:
+ *   php scripts/test_alert_workflow.php
+ *   docker exec -it alerts php scripts/test_alert_workflow.php
+ * 
+ * Prerequisites:
+ *   - Database initialized (migrate.php run)
+ *   - At least one user configured with notification credentials
+ *   - Internet connectivity for API access
+ * 
+ * Exit Codes:
+ *   - 0: Test completed successfully
+ *   - 1: Test failed (no alerts, no users, notification error, etc.)
+ * 
+ * Environment Variables:
+ *   - PUSHOVER_ENABLED: Enable/disable Pushover notifications
+ *   - NTFY_ENABLED: Enable/disable ntfy notifications
+ *   - All other Config variables (API URLs, etc.)
+ * 
+ * Logs:
+ *   All operations are logged via LoggerFactory to stdout/Dozzle
+ *   with structured JSON format for easy filtering and analysis.
  * 
  * @package Alerts
  * @author  Alerts Team

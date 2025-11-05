@@ -5,9 +5,23 @@ namespace App;
  * Application configuration container
  *
  * Static properties populated from environment variables via Config::initFromEnv().
+ * All configuration values are loaded from environment variables or use sensible defaults.
+ * 
+ * @package App
+ * @author  Alerts Team
+ * @license MIT
  */
 final class Config
 {
+  /**
+   * Get environment variable value
+   * 
+   * Checks $_ENV first, then getenv(). Returns default if not found.
+   * 
+   * @param string $key Environment variable name
+   * @param mixed $default Default value if not found
+   * @return mixed Environment variable value or default
+   */
   private static function env(string $key, $default = null)
   {
     if (array_key_exists($key, $_ENV)) {
@@ -16,42 +30,78 @@ final class Config
     $val = getenv($key);
     return $val !== false ? $val : $default;
   }
+    
+    /** @var string Application name */
+    /** @var string Application name */
     public static string $appName;
+    /** @var string Application version */
     public static string $appVersion;
+    /** @var string Contact email address */
     public static string $contactEmail;
 
+    /** @var int Polling interval in minutes */
     public static int $pollMinutes;
+    /** @var int API rate limit (requests per minute) */
     public static int $apiRatePerMinute;
+    /** @var int Pushover pacing delay in seconds between requests */
     public static int $pushoverRateSeconds;
+    /** @var int Database VACUUM interval in hours */
     public static int $vacuumHours;
 
+    /** @var string Path to SQLite database file */
     public static string $dbPath;
 
+    /** @var string Logging channel (stdout, file, etc.) */
     public static string $logChannel;
+    /** @var string Logging level (debug, info, warning, error) */
     public static string $logLevel;
 
+    /** @var string Pushover API endpoint URL */
     public static string $pushoverApiUrl;
+    /** @var string Weather.gov alerts API endpoint URL */
     public static string $weatherApiUrl;
+    /** @var string NWS zones data file URL */
     public static string $zonesDataUrl;
 
+    /** @var string Global Pushover user key (fallback) */
     public static string $pushoverUser;
+    /** @var string Global Pushover app token (fallback) */
     public static string $pushoverToken;
 
-  // Feature flags
+  /** @var bool Enable Pushover notifications */
   public static bool $pushoverEnabled;
+  /** @var bool Enable ntfy notifications */
   public static bool $ntfyEnabled;
 
-  // NTFY configuration
+  /** @var string ntfy server base URL */
   public static string $ntfyBaseUrl;
+  /** @var string Global ntfy topic (fallback) */
   public static string $ntfyTopic;
+  /** @var string|null Global ntfy username for authentication */
   public static ?string $ntfyUser;
+  /** @var string|null Global ntfy password for authentication */
   public static ?string $ntfyPassword;
+  /** @var string|null Global ntfy token for authentication */
   public static ?string $ntfyToken;
+  /** @var string|null Optional prefix for ntfy notification titles */
   public static ?string $ntfyTitlePrefix;
 
+  /** @var array SAME/UGC codes to filter alerts by */
   public static array $weatherAlerts = [];
+  /** @var string IANA timezone identifier for timestamp localization */
   public static string $timezone;
 
+    /**
+     * Initialize configuration from environment variables
+     * 
+     * Loads all configuration values from environment variables using
+     * sensible defaults. Must be called during application bootstrap.
+     * 
+     * Validates certain values like ntfy topic names.
+     * 
+     * @return void
+     * @throws \RuntimeException If ntfy topic name is invalid when ntfy is enabled
+     */
     public static function initFromEnv(): void
     {
       self::$appName = (string)(self::env('APP_NAME', 'alerts'));

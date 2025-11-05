@@ -13,15 +13,46 @@ use App\Repository\AlertsRepository;
  */
 final class AlertFetcher
 {
+    /**
+     * Weather API client
+     *
+     * @var WeatherClient
+     */
     private WeatherClient $client;
+    
+    /**
+     * Alerts repository for database operations
+     *
+     * @var AlertsRepository
+     */
     private AlertsRepository $repo;
 
+    /**
+     * Constructor - initializes the weather client and repository
+     *
+     * @return void
+     */
     public function __construct()
     {
         $this->client = new WeatherClient();
         $this->repo = new AlertsRepository();
     }
 
+    /**
+     * Fetch active alerts from weather.gov API and store them in incoming_alerts table
+     * 
+     * This method:
+     * 1. Fetches current active alerts from the weather.gov API
+     * 2. Normalizes the alert data structure
+     * 3. Deduplicates alerts by ID to prevent constraint violations
+     * 4. Stores the alerts in the incoming_alerts table
+     * 
+     * If no alerts are returned (empty features array), the method skips the database
+     * update to preserve existing incoming_alerts data.
+     *
+     * @return int Number of alerts fetched and stored
+     * @throws \Exception If API request fails or database operation fails
+     */
     public function fetchAndStoreIncoming(): int
     {
         $data = $this->client->fetchActive();
