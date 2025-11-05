@@ -25,7 +25,7 @@ A Dockerized PHP 8.3 application that monitors weather.gov alerts, stores them i
   - `zones`: NWS weather zones with geographic information
   - `users`: User profiles with notification preferences and zone subscriptions
 - **Intelligent Diff Detection**: Compares incoming alerts against active alerts to identify only new alerts
-- **Geographic Filtering**: Configurable SAME/UGC code filtering to receive only relevant alerts for your area
+- **Per-User Geographic Filtering**: Each user selects specific weather zones to monitor - alerts are only sent when they match the user's configured zones
 - **Dual Notification Channels**:
   - **Pushover**: Rich notifications with retry logic (up to 3 attempts), 2-second pacing, and clickable alert URLs
   - **ntfy**: Open-source push notifications with custom priority, tags, and actions
@@ -67,8 +67,9 @@ cp .env.example .env
 Edit `.env` and set at minimum:
 - `PUSHOVER_USER` and `PUSHOVER_TOKEN` (if using Pushover)
 - `NTFY_TOPIC` (if using ntfy)
-- `WEATHER_ALERT_CODES` (optional: comma-separated SAME/UGC codes to filter alerts)
 - `TIMEZONE` (your IANA timezone, e.g., "America/New_York")
+
+Note: Alert filtering is now configured per-user through the web UI by selecting specific weather zones, not via environment variables.
 
 ### 3. Start the Application
 ```sh

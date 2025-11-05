@@ -11,12 +11,10 @@ use Monolog\Level;
 
 require __DIR__ . '/../vendor/autoload.php';
 
-// Auto-test overrides: use a separate test DB and override alert codes for this run only
+// Auto-test overrides: use a separate test DB for this run only
 $originalDbPath = getenv('DB_PATH') !== false ? getenv('DB_PATH') : null;
-$originalCodes = getenv('WEATHER_ALERT_CODES') !== false ? getenv('WEATHER_ALERT_CODES') : null;
 $testDbPath = __DIR__ . '/../data/test_alerts.sqlite';
 putenv('DB_PATH=' . $testDbPath);
-putenv('WEATHER_ALERT_CODES=MDC031,024031');
 // Respect TEST_FORCE_SEND only if provided by caller; do not set a default here
 
 require __DIR__ . '/../src/bootstrap.php';
@@ -33,9 +31,6 @@ try {
     passthru($cmd, $code);
   }
 }
-
-// Sync runtime Config with current env-loaded codes
-Config::$weatherAlerts = array_map('trim', explode(',', getenv('WEATHER_ALERT_CODES') ?: ''));
 
 // Configure verbose logging to timestamped file under ./logs
 $logDir = __DIR__ . '/../logs';
@@ -61,7 +56,6 @@ if (method_exists($logger, 'pushHandler')) {
   }
 }
 $logger->info('Starting one-shot test run', [
-  'codes' => Config::$weatherAlerts,
   'log_file' => $logFile,
   'db_path' => getenv('DB_PATH'),
   'ntfy_enabled' => Config::$ntfyEnabled,
@@ -81,18 +75,9 @@ try {
   $nQueued = $processor->diffAndQueue();
   $logger->info('Diff and queue completed', ['queued' => $nQueued]);
 
-  // 3) Process pending (apply overridden codes and send notifications)
-  // Optional test-only bypass
-  if (getenv('TEST_FORCE_SEND') === '1') {
-    $logger->warning('TEST_FORCE_SEND enabled: bypassing SAMES/UGC code filtering for this run');
-    // Wrap processPending by temporarily overriding Config::$weatherAlerts to empty to match all
-    $origCodes = Config::$weatherAlerts;
-    Config::$weatherAlerts = [];
-    $processor->processPending();
-    Config::$weatherAlerts = $origCodes;
-  } else {
-    $processor->processPending();
-  }
+  // 3) Process pending and send notifications
+  // Note: TEST_FORCE_SEND is no longer needed as filtering is based on user ZoneAlert only
+  $processor->processPending();
   $logger->info('Process pending completed');
 } catch (Throwable $e) {
   $logger->error('One-shot test failed', [
@@ -110,11 +95,6 @@ if ($originalDbPath !== null) {
   putenv('DB_PATH=' . $originalDbPath);
 } else {
   putenv('DB_PATH');
-}
-if ($originalCodes !== null) {
-  putenv('WEATHER_ALERT_CODES=' . $originalCodes);
-} else {
-  putenv('WEATHER_ALERT_CODES');
 }
 
 echo "Done. Logs written to: {$logFile}\n";

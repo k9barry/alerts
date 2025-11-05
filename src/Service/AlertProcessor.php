@@ -111,7 +111,9 @@ final class AlertProcessor
           $anyMatch = false;
           foreach ($users as $u) {
             $userZoneIds = $this->parseUserZoneAlert($u['ZoneAlert'] ?? '[]');
+            // If user has no zones configured, skip them (don't send all alerts)
             if (empty($userZoneIds)) continue;
+            // If alert doesn't match any of user's zones, skip this user
             if (empty(array_intersect($alertIds, $userZoneIds))) continue;
             $anyMatch = true;
 

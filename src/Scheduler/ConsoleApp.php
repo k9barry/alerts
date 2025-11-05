@@ -39,6 +39,8 @@ final class ConsoleApp
             protected static $defaultName = 'vacuum';
             protected function execute(InputInterface $input, OutputInterface $output): int
             {
+                // VACUUM reclaims disk space from the entire SQLite database
+                // This optimizes the database file and compacts freed space
                 $db = \App\DB\Connection::get();
                 $db->exec('VACUUM');
                 LoggerFactory::get()->info('Database vacuum complete');

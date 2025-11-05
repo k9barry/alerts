@@ -86,8 +86,6 @@ final class Config
   /** @var string|null Optional prefix for ntfy notification titles */
   public static ?string $ntfyTitlePrefix;
 
-  /** @var array SAME/UGC codes to filter alerts by */
-  public static array $weatherAlerts = [];
   /** @var string IANA timezone identifier for timestamp localization */
   public static string $timezone;
 
@@ -146,14 +144,6 @@ final class Config
       }
 
       self::$timezone = (string)(self::env('TIMEZONE', 'America/Indianapolis'));
-
-      $codes = (string)self::env('WEATHER_ALERT_CODES', '');
-      if ($codes !== '') {
-        $parts = array_filter(array_map('trim', preg_split('/[\s,;]+/', $codes)));
-        self::$weatherAlerts = array_values(array_unique($parts));
-      } else {
-        self::$weatherAlerts = [];
-      }
     }
 
   /**
