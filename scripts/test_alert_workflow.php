@@ -113,7 +113,7 @@ try {
     echo "Step 3: Retrieving users list...\n";
     $logger->info("Step 3: Retrieving users list");
     
-    $stmt = $pdo->query("SELECT idx, FirstName, LastName, Email, PushoverUser, NtfyTopic FROM users ORDER BY idx");
+    $stmt = $pdo->query("SELECT idx, FirstName, LastName, Email, PushoverUser, PushoverToken, NtfyUser, NtfyPassword, NtfyToken, NtfyTopic FROM users ORDER BY idx");
     $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
     if (empty($users)) {
@@ -125,6 +125,18 @@ try {
     
     echo "  ✓ Found " . count($users) . " user(s)\n\n";
     $logger->info("Users retrieved", ['user_count' => count($users)]);
+    
+    // Log which fields are available for each user (for debugging)
+    if (!empty($users)) {
+        $sampleUser = $users[0];
+        $logger->debug("User fields retrieved from database", [
+            'fields' => array_keys($sampleUser),
+            'has_PushoverToken' => isset($sampleUser['PushoverToken']),
+            'has_NtfyToken' => isset($sampleUser['NtfyToken']),
+            'has_NtfyUser' => isset($sampleUser['NtfyUser']),
+            'has_NtfyPassword' => isset($sampleUser['NtfyPassword'])
+        ]);
+    }
     
     // Step 4: Prompt for user selection
     echo "Step 4: Select a user to receive the test alert:\n\n";
@@ -219,6 +231,13 @@ try {
     $pushoverUser = trim($selectedUser['PushoverUser'] ?? '');
     $pushoverToken = trim($selectedUser['PushoverToken'] ?? '');
     
+    $logger->debug("Pushover credentials check", [
+        'has_PushoverUser' => !empty($pushoverUser),
+        'has_PushoverToken' => !empty($pushoverToken),
+        'PushoverUser_length' => strlen($pushoverUser),
+        'PushoverToken_length' => strlen($pushoverToken)
+    ]);
+    
     if (Config::$pushoverEnabled && !empty($pushoverUser) && !empty($pushoverToken)) {
         echo "  Sending via Pushover...\n";
         $logger->info("Attempting Pushover notification");
@@ -279,6 +298,14 @@ try {
     $ntfyUser = !empty($selectedUser['NtfyUser']) ? trim($selectedUser['NtfyUser']) : null;
     $ntfyPassword = !empty($selectedUser['NtfyPassword']) ? trim($selectedUser['NtfyPassword']) : null;
     $ntfyToken = !empty($selectedUser['NtfyToken']) ? trim($selectedUser['NtfyToken']) : null;
+    
+    $logger->debug("Ntfy credentials check", [
+        'has_NtfyTopic' => !empty($ntfyTopic),
+        'has_NtfyToken' => !empty($ntfyToken),
+        'has_NtfyUser' => !empty($ntfyUser),
+        'has_NtfyPassword' => !empty($ntfyPassword),
+        'NtfyTopic' => $ntfyTopic
+    ]);
     
     if (Config::$ntfyEnabled && !empty($ntfyTopic)) {
         echo "  Sending via Ntfy...\n";
