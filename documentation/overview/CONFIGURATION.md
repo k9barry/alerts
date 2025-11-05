@@ -136,19 +136,6 @@ Config::initFromEnv();
   - Must return GeoJSON format
   - See [Weather.gov API docs](https://www.weather.gov/documentation/services-web-api)
 
-### WEATHER_ALERT_CODES
-- **Type**: string (comma/space/semicolon separated)
-- **Default**: `""` (empty = all alerts)
-- **Purpose**: Filter alerts by SAME or UGC codes
-- **Example**: `WEATHER_ALERT_CODES="018097,018003"` or `WEATHER_ALERT_CODES="INZ034 INZ035"`
-- **Notes**:
-  - SAME codes: 6-digit FIPS codes (county-level)
-  - UGC codes: Zone/county codes like INZ034
-  - Case-insensitive matching
-  - Multiple codes separated by comma, space, or semicolon
-  - Leave empty to receive all alerts
-  - Find codes: https://www.weather.gov/gis/ZoneCounty
-
 ### TIMEZONE
 - **Type**: string (IANA timezone name)
 - **Default**: `"America/Indianapolis"`
@@ -331,15 +318,6 @@ PUSHOVER_TOKEN="azGDORePK8gMaC0QOYAMyEEuzJnyUi"
 NTFY_ENABLED="true"
 NTFY_TOPIC="weather_alerts"
 NTFY_TOKEN="tk_AgQdq7mVBoFD37zQVN29RhuMzNIz2"
-```
-
-### Geographic Filtering
-```env
-APP_CONTACT_EMAIL="admin@example.com"
-WEATHER_ALERT_CODES="018097,018003,INZ034,INZ035"
-TIMEZONE="America/Indianapolis"
-PUSHOVER_USER="uQiRzpo4DXghDmr9QzzfQu27cmVRsG"
-PUSHOVER_TOKEN="azGDORePK8gMaC0QOYAMyEEuzJnyUi"
 ```
 
 ### High-Volume Configuration

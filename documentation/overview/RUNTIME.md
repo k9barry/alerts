@@ -637,7 +637,8 @@ docker compose up -d alerts
 **Check**:
 - View Dozzle logs for "No changes from API"
 - Visit https://alerts.weather.gov to verify alerts exist
-- Check `WEATHER_ALERT_CODES` setting
+- Check user zone configuration in the web UI to ensure zones are selected
+- Verify users have zones matching active alerts in the area
 
 ### High CPU Usage
 

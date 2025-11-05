@@ -55,12 +55,13 @@ LOG_CHANNEL="stdout"    # stdout or file
 LOG_LEVEL="info"        # debug, info, notice, warning, error, critical, alert, emergency
 ```
 
-#### Weather API and Filtering
+#### Weather API and Timezone
 ```env
 WEATHER_API_URL="https://api.weather.gov/alerts/active"
-WEATHER_ALERT_CODES=""  # Comma/space/semicolon separated SAME/UGC codes (leave empty for all alerts)
 TIMEZONE="America/Indianapolis"  # IANA timezone for timestamp localization
 ```
+
+**Note**: Alert filtering is configured per-user through the web UI (http://localhost:8080) by selecting specific weather zones, not through environment variables.
 
 #### Notification Channels
 
@@ -271,9 +272,9 @@ If you see "database is locked" errors:
 
 1. **Check logs**: View Dozzle at http://localhost:9999
 2. **Verify API access**: Ensure you can reach https://api.weather.gov/alerts/active
-3. **Check filtering**: If `WEATHER_ALERT_CODES` is set, ensure it includes codes for your area
-4. **Verify notification credentials**: Check Pushover/ntfy credentials are correct
-5. **Check active alerts**: Visit https://alerts.weather.gov to see if there are active alerts in your area
+3. **Check user zone configuration**: Ensure users have selected weather zones in the web UI at http://localhost:8080
+4. **Verify notification credentials**: Check Pushover/ntfy credentials are correct in the user settings
+5. **Check active alerts**: Visit https://alerts.weather.gov to see if there are active alerts in your area matching your configured zones
 
 ### View Database Contents
 
@@ -306,5 +307,5 @@ rm -rf alerts
 
 - See [README.DEV.md](README.DEV.md) for development setup
 - See [documentation/](documentation/) for detailed component documentation
-- Configure [WEATHER_ALERT_CODES](.env.example) to filter alerts for your area
+- Configure user weather zones through the web UI at http://localhost:8080
 - Set up multiple notification channels for redundancy
