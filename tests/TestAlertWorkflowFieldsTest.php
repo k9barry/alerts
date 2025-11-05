@@ -1,6 +1,7 @@
 <?php
 
 use PHPUnit\Framework\TestCase;
+use App\DB\Connection;
 
 /**
  * Test that the test_alert_workflow.php script retrieves all required fields from the database.
@@ -10,15 +11,11 @@ use PHPUnit\Framework\TestCase;
 class TestAlertWorkflowFieldsTest extends TestCase
 {
     /**
-     * Test that all required user fields are retrieved from the database
-     * when querying users for the test workflow.
+     * Helper method to create the users table with consistent schema
      */
-    public function testAllRequiredUserFieldsAreRetrieved(): void
+    private function createUsersTable(): void
     {
-        // Ensure we have a PDO connection
-        $pdo = \App\DB\Connection::get();
-
-        // Create minimal schema for test (in-memory DB from tests/bootstrap.php)
+        $pdo = Connection::get();
         $pdo->exec("CREATE TABLE IF NOT EXISTS users (
             idx INTEGER PRIMARY KEY AUTOINCREMENT,
             FirstName TEXT NOT NULL,
@@ -33,6 +30,16 @@ class TestAlertWorkflowFieldsTest extends TestCase
             NtfyTopic TEXT,
             ZoneAlert TEXT
         )");
+    }
+    /**
+     * Test that all required user fields are retrieved from the database
+     * when querying users for the test workflow.
+     */
+    public function testAllRequiredUserFieldsAreRetrieved(): void
+    {
+        // Ensure we have a PDO connection and create table
+        $this->createUsersTable();
+        $pdo = Connection::get();
 
         // Insert a test user with all notification credentials
         $stmt = $pdo->prepare("INSERT INTO users (
@@ -104,21 +111,9 @@ class TestAlertWorkflowFieldsTest extends TestCase
      */
     public function testCredentialsAreUsableAfterRetrieval(): void
     {
-        $pdo = \App\DB\Connection::get();
-
-        // Create table if not exists
-        $pdo->exec("CREATE TABLE IF NOT EXISTS users (
-            idx INTEGER PRIMARY KEY AUTOINCREMENT,
-            FirstName TEXT NOT NULL,
-            LastName TEXT NOT NULL,
-            Email TEXT NOT NULL,
-            PushoverUser TEXT,
-            PushoverToken TEXT,
-            NtfyUser TEXT,
-            NtfyPassword TEXT,
-            NtfyToken TEXT,
-            NtfyTopic TEXT
-        )");
+        // Create table with consistent schema
+        $this->createUsersTable();
+        $pdo = Connection::get();
 
         // Insert user with credentials (unique email to avoid conflicts)
         $stmt = $pdo->prepare("INSERT INTO users (
@@ -127,7 +122,7 @@ class TestAlertWorkflowFieldsTest extends TestCase
             NtfyUser, NtfyPassword, NtfyToken, NtfyTopic
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
         
-        $uniqueEmail = 'john' . time() . '@example.com';
+        $uniqueEmail = 'john-' . uniqid() . '@example.com';
         $stmt->execute([
             'John',
             'Doe',
