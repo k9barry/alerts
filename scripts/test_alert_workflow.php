@@ -259,9 +259,16 @@ try {
             $results['pushover'] = 'ERROR: ' . $e->getMessage();
         }
     } else {
-        $reason = !Config::$pushoverEnabled ? 'disabled' : 
-                  (empty($pushoverUser) ? 'missing PushoverUser' :
-                  (empty($pushoverToken) ? 'missing PushoverToken' : 'not configured for user'));
+        // Determine the specific reason why Pushover was skipped
+        if (!Config::$pushoverEnabled) {
+            $reason = 'disabled';
+        } elseif (empty($pushoverUser)) {
+            $reason = 'missing PushoverUser';
+        } elseif (empty($pushoverToken)) {
+            $reason = 'missing PushoverToken';
+        } else {
+            $reason = 'not configured for user';
+        }
         echo "  ⊘ Pushover skipped ({$reason})\n";
         $logger->info("Pushover skipped", ['reason' => $reason]);
         $results['pushover'] = 'SKIPPED: ' . $reason;
@@ -318,8 +325,14 @@ try {
             $results['ntfy'] = 'ERROR: ' . $e->getMessage();
         }
     } else {
-        $reason = !Config::$ntfyEnabled ? 'disabled' : 
-                  (empty($ntfyTopic) ? 'missing NtfyTopic' : 'not configured for user');
+        // Determine the specific reason why Ntfy was skipped
+        if (!Config::$ntfyEnabled) {
+            $reason = 'disabled';
+        } elseif (empty($ntfyTopic)) {
+            $reason = 'missing NtfyTopic';
+        } else {
+            $reason = 'not configured for user';
+        }
         echo "  ⊘ Ntfy skipped ({$reason})\n";
         $logger->info("Ntfy skipped", ['reason' => $reason]);
         $results['ntfy'] = 'SKIPPED: ' . $reason;
