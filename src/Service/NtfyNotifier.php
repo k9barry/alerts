@@ -17,10 +17,10 @@ use Throwable;
 class NtfyNotifier
 {
   public function __construct(
-    private readonly LoggerInterface $logger,
-    private readonly bool            $enabled,
-    private readonly string          $topic,
-    private readonly ?string         $titlePrefix,
+    private readonly ?LoggerInterface $logger = null,
+    private readonly ?bool            $enabled = null,
+    private readonly ?string          $topic = null,
+    private readonly ?string         $titlePrefix = null,
     private readonly mixed           $httpClient = null
   )
   {
@@ -49,8 +49,8 @@ class NtfyNotifier
    */
   public function isEnabled(): bool
   {
-    $topic = trim($this->topic);
-    return $this->enabled && $topic !== '' && self::isValidTopicName($topic);
+    $topic = trim($this->topic ?? '');
+    return ($this->enabled ?? false) && $topic !== '' && self::isValidTopicName($topic);
   }
 
   /**
@@ -63,28 +63,36 @@ class NtfyNotifier
   public function send(string $title, string $message, array $options = []): void
   {
     if (!$this->isEnabled()) {
-      $this->logger->info('Ntfy sending skipped (disabled or misconfigured)');
+      if ($this->logger) {
+        $this->logger->info('Ntfy sending skipped (disabled or misconfigured)');
+      }
       return;
     }
 
     $topic = trim((string)$this->topic);
     if ($topic === '') {
-      $this->logger->error('Ntfy sending aborted: empty topic');
+      if ($this->logger) {
+        $this->logger->error('Ntfy sending aborted: empty topic');
+      }
       return;
     }
 
     if (!self::isValidTopicName($topic)) {
-      $this->logger->error('Ntfy sending aborted: invalid topic name', [
-        'topic' => $topic,
-        'reason' => 'Topic names can only contain letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-)'
-      ]);
+      if ($this->logger) {
+        $this->logger->error('Ntfy sending aborted: invalid topic name', [
+          'topic' => $topic,
+          'reason' => 'Topic names can only contain letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-)'
+        ]);
+      }
       return;
     }
 
-    $this->logger->info('Ntfy sending', [
-      'topic' => $topic,
-      'title' => $title,
-    ]);
+    if ($this->logger) {
+      $this->logger->info('Ntfy sending', [
+        'topic' => $topic,
+        'title' => $title,
+      ]);
+    }
 
     $fullTitle = ltrim(($this->titlePrefix ?? '') . ' ' . $title);
 
@@ -125,15 +133,23 @@ class NtfyNotifier
       $resp = $http->post($url, ['headers' => $headers, 'body' => $body]);
       $status = $resp->getStatusCode();
       if ($status >= 200 && $status < 300) {
-        $this->logger->info('Ntfy notification sent (http)', ['topic' => $this->topic, 'status' => $status]);
+        if ($this->logger) {
+          $this->logger->info('Ntfy notification sent (http)', ['topic' => $this->topic, 'status' => $status]);
+        }
         return;
       }
       $body = (string)$resp->getBody();
-      $this->logger->error('Ntfy HTTP send failed', ['status' => $status, 'body' => $body, 'url' => $url]);
+      if ($this->logger) {
+        $this->logger->error('Ntfy HTTP send failed', ['status' => $status, 'body' => $body, 'url' => $url]);
+      }
     } catch (GuzzleException $ge) {
-      $this->logger->error('Ntfy HTTP send failed (exception)', ['error' => $ge->getMessage()]);
+      if ($this->logger) {
+        $this->logger->error('Ntfy HTTP send failed (exception)', ['error' => $ge->getMessage()]);
+      }
     } catch (Throwable $e) {
-      $this->logger->error('Ntfy HTTP send failed (throwable)', ['error' => $e->getMessage()]);
+      if ($this->logger) {
+        $this->logger->error('Ntfy HTTP send failed (throwable)', ['error' => $e->getMessage()]);
+      }
     }
   }
 
@@ -149,17 +165,23 @@ class NtfyNotifier
   public function sendForUser(string $title, string $message, array $options = [], ?array $userRow = null): void
   {
     if (!$this->isEnabled()) {
-      $this->logger->info('Ntfy sending skipped (disabled or misconfigured)');
+      if ($this->logger) {
+        $this->logger->info('Ntfy sending skipped (disabled or misconfigured)');
+      }
       return;
     }
 
     $topic = trim((string)$this->topic);
     if ($topic === '') {
-      $this->logger->error('Ntfy sending aborted: empty topic');
+      if ($this->logger) {
+        $this->logger->error('Ntfy sending aborted: empty topic');
+      }
       return;
     }
 
-    $this->logger->info('Ntfy sending (per-user)', ['topic' => $topic, 'title' => $title]);
+    if ($this->logger) {
+      $this->logger->info('Ntfy sending (per-user)', ['topic' => $topic, 'title' => $title]);
+    }
 
     try {
       $base = rtrim((string)Config::$ntfyBaseUrl, '/');
@@ -200,15 +222,23 @@ class NtfyNotifier
       $resp = $http->post($url, ['headers' => $headers, 'body' => $body]);
       $status = $resp->getStatusCode();
       if ($status >= 200 && $status < 300) {
-        $this->logger->info('Ntfy notification sent (user)', ['topic' => $topic, 'status' => $status, 'user_idx' => $userRow['idx'] ?? null]);
+        if ($this->logger) {
+          $this->logger->info('Ntfy notification sent (user)', ['topic' => $topic, 'status' => $status, 'user_idx' => $userRow['idx'] ?? null]);
+        }
         return;
       }
       $body = (string)$resp->getBody();
-      $this->logger->error('Ntfy HTTP send failed (user)', ['status' => $status, 'body' => $body, 'url' => $url]);
+      if ($this->logger) {
+        $this->logger->error('Ntfy HTTP send failed (user)', ['status' => $status, 'body' => $body, 'url' => $url]);
+      }
     } catch (GuzzleException $ge) {
-      $this->logger->error('Ntfy HTTP send failed (exception)', ['error' => $ge->getMessage(), 'user_idx' => $userRow['idx'] ?? null]);
+      if ($this->logger) {
+        $this->logger->error('Ntfy HTTP send failed (exception)', ['error' => $ge->getMessage(), 'user_idx' => $userRow['idx'] ?? null]);
+      }
     } catch (\Throwable $e) {
-      $this->logger->error('Ntfy HTTP send failed (throwable)', ['error' => $e->getMessage(), 'user_idx' => $userRow['idx'] ?? null]);
+      if ($this->logger) {
+        $this->logger->error('Ntfy HTTP send failed (throwable)', ['error' => $e->getMessage(), 'user_idx' => $userRow['idx'] ?? null]);
+      }
     }
   }
 
@@ -233,20 +263,26 @@ class NtfyNotifier
     }
 
     if ($topic === '') {
-      $this->logger->error('Ntfy sending aborted: no topic available (neither user NtfyTopic nor config topic)');
+      if ($this->logger) {
+        $this->logger->error('Ntfy sending aborted: no topic available (neither user NtfyTopic nor config topic)');
+      }
       return;
     }
 
     if (!self::isValidTopicName($topic)) {
-      $this->logger->error('Ntfy sending aborted: invalid topic name', [
-        'topic' => $topic,
-        'user_idx' => $userRow['idx'] ?? null,
-        'reason' => 'Topic names can only contain letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-)'
-      ]);
+      if ($this->logger) {
+        $this->logger->error('Ntfy sending aborted: invalid topic name', [
+          'topic' => $topic,
+          'user_idx' => $userRow['idx'] ?? null,
+          'reason' => 'Topic names can only contain letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-)'
+        ]);
+      }
       return;
     }
 
-    $this->logger->info('Ntfy sending (per-user with topic)', ['topic' => $topic, 'title' => $title, 'zone_prefix' => $zoneTitlePrefix]);
+    if ($this->logger) {
+      $this->logger->info('Ntfy sending (per-user with topic)', ['topic' => $topic, 'title' => $title, 'zone_prefix' => $zoneTitlePrefix]);
+    }
 
     try {
       $base = rtrim((string)Config::$ntfyBaseUrl, '/');
@@ -297,15 +333,109 @@ class NtfyNotifier
       $resp = $http->post($url, ['headers' => $headers, 'body' => $body]);
       $status = $resp->getStatusCode();
       if ($status >= 200 && $status < 300) {
-        $this->logger->info('Ntfy notification sent (user with topic)', ['topic' => $topic, 'status' => $status, 'user_idx' => $userRow['idx'] ?? null]);
+        if ($this->logger) {
+          $this->logger->info('Ntfy notification sent (user with topic)', ['topic' => $topic, 'status' => $status, 'user_idx' => $userRow['idx'] ?? null]);
+        }
         return;
       }
       $body = (string)$resp->getBody();
-      $this->logger->error('Ntfy HTTP send failed (user with topic)', ['status' => $status, 'body' => $body, 'url' => $url]);
+      if ($this->logger) {
+        $this->logger->error('Ntfy HTTP send failed (user with topic)', ['status' => $status, 'body' => $body, 'url' => $url]);
+      }
     } catch (GuzzleException $ge) {
-      $this->logger->error('Ntfy HTTP send failed (exception)', ['error' => $ge->getMessage(), 'user_idx' => $userRow['idx'] ?? null]);
+      if ($this->logger) {
+        $this->logger->error('Ntfy HTTP send failed (exception)', ['error' => $ge->getMessage(), 'user_idx' => $userRow['idx'] ?? null]);
+      }
     } catch (\Throwable $e) {
-      $this->logger->error('Ntfy HTTP send failed (throwable)', ['error' => $e->getMessage(), 'user_idx' => $userRow['idx'] ?? null]);
+      if ($this->logger) {
+        $this->logger->error('Ntfy HTTP send failed (throwable)', ['error' => $e->getMessage(), 'user_idx' => $userRow['idx'] ?? null]);
+      }
+    }
+  }
+
+  /**
+   * Send an alert notification to a specific topic with custom credentials.
+   * This is a simplified interface for testing and ad-hoc notifications.
+   *
+   * @param string $topic Ntfy topic to send to
+   * @param string $title Alert title/event name
+   * @param string $message Alert message body
+   * @param string|null $url Optional URL to link to
+   * @param string|null $user Optional ntfy username for authentication
+   * @param string|null $password Optional ntfy password for authentication
+   * @param string|null $token Optional ntfy token for authentication
+   * @return array{success:bool,error:string|null}
+   */
+  public function sendAlert(string $topic, string $title, string $message, ?string $url = null, ?string $user = null, ?string $password = null, ?string $token = null): array
+  {
+    $topic = trim($topic);
+    if ($topic === '') {
+      return ['success' => false, 'error' => 'Empty topic'];
+    }
+
+    if (!self::isValidTopicName($topic)) {
+      return ['success' => false, 'error' => 'Invalid topic name: Topic names can only contain letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-)'];
+    }
+
+    try {
+      $base = rtrim((string)Config::$ntfyBaseUrl, '/');
+      if ($base === '') {
+        throw new RuntimeException('Empty ntfy base URL in Config');
+      }
+      $ntfyUrl = $base . '/' . rawurlencode($topic);
+      $http = $this->httpClient ?? new HttpClient([
+        'timeout' => 15,
+        'http_errors' => false,
+      ]);
+
+      $headers = ['Content-Type' => 'text/plain; charset=utf-8'];
+      
+      // Use provided credentials, or fall back to config
+      if ($token) {
+        $headers['Authorization'] = 'Bearer ' . trim($token);
+      } elseif ($user && $password) {
+        $headers['Authorization'] = 'Basic ' . base64_encode(trim($user) . ':' . trim($password));
+      } elseif (!empty(Config::$ntfyToken)) {
+        $headers['Authorization'] = 'Bearer ' . Config::$ntfyToken;
+      } elseif (!empty(Config::$ntfyUser) && !empty(Config::$ntfyPassword)) {
+        $headers['Authorization'] = 'Basic ' . base64_encode(Config::$ntfyUser . ':' . Config::$ntfyPassword);
+      }
+
+      $headers['X-Title'] = substr($title, 0, 200);
+      if ($url && preg_match('#^https?://#i', $url)) {
+        $headers['X-Click'] = $url;
+      }
+
+      $body = substr($message, 0, 4096);
+      $resp = $http->post($ntfyUrl, ['headers' => $headers, 'body' => $body]);
+      $status = $resp->getStatusCode();
+      
+      if ($status >= 200 && $status < 300) {
+        if ($this->logger) {
+          $this->logger->info('Ntfy sendAlert success', ['topic' => $topic, 'status' => $status]);
+        }
+        return ['success' => true, 'error' => null];
+      }
+      
+      $responseBody = (string)$resp->getBody();
+      $error = 'HTTP ' . $status . ': ' . $responseBody;
+      if ($this->logger) {
+        $this->logger->error('Ntfy sendAlert failed', ['status' => $status, 'body' => $responseBody]);
+      }
+      return ['success' => false, 'error' => $error];
+      
+    } catch (GuzzleException $ge) {
+      $error = 'Guzzle exception: ' . $ge->getMessage();
+      if ($this->logger) {
+        $this->logger->error('Ntfy sendAlert exception', ['error' => $error]);
+      }
+      return ['success' => false, 'error' => $error];
+    } catch (Throwable $e) {
+      $error = 'Exception: ' . $e->getMessage();
+      if ($this->logger) {
+        $this->logger->error('Ntfy sendAlert throwable', ['error' => $error]);
+      }
+      return ['success' => false, 'error' => $error];
     }
   }
 }

@@ -187,5 +187,71 @@ final class PushoverNotifier
       ];
     }
 
+    /**
+     * Send an alert notification to a specific user with custom token.
+     * This is a simplified interface for testing and ad-hoc notifications.
+     *
+     * @param string $user Pushover user key
+     * @param string $token Pushover application token
+     * @param string $title Alert title/event name
+     * @param string $message Alert message body
+     * @param string|null $url Optional URL to link to
+     * @return array{success:bool,error:string|null,request_id:string|null}
+     */
+    public function sendAlert(string $user, string $token, string $title, string $message, ?string $url = null): array
+    {
+        $body = [
+            'token' => $token,
+            'user' => $user,
+            'title' => substr($title, 0, 250),
+            'message' => substr($message, 0, 1024),
+            'priority' => 0,
+        ];
+
+        if ($url && preg_match('#^https?://#i', $url)) {
+            $body['url'] = $url;
+            $body['url_title'] = 'Details';
+        }
+
+        $attempts = 0;
+        $ok = false;
+        $error = null;
+        $requestId = null;
+
+        while ($attempts < 3 && !$ok) {
+            $attempts++;
+            $this->pace();
+            try {
+                $resp = $this->client->post(Config::$pushoverApiUrl, ['form_params' => $body]);
+                $ok = $resp->getStatusCode() === 200;
+                if (!$ok) {
+                    $statusCode = $resp->getStatusCode();
+                    $respBody = (string)$resp->getBody();
+                    $respJson = json_decode($respBody, true) ?: [];
+                    $apiErrors = $respJson['errors'] ?? null;
+                    $error = 'HTTP ' . $statusCode . ($apiErrors ? (' - ' . implode('; ', (array)$apiErrors)) : '');
+                } else {
+                    $respJson = json_decode((string)$resp->getBody(), true) ?: [];
+                    $requestId = $respJson['request'] ?? null;
+                }
+            } catch (\Throwable $e) {
+                $error = $e->getMessage();
+            }
+        }
+
+        LoggerFactory::get()->info('Pushover sendAlert result', [
+            'user' => $user,
+            'success' => $ok,
+            'attempts' => $attempts,
+            'error' => $error,
+        ]);
+
+        return [
+            'success' => $ok,
+            'error' => $error,
+            'request_id' => $requestId,
+        ];
+    }
+
 
 }
