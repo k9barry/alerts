@@ -364,17 +364,17 @@ class NtfyNotifier
    * @param string|null $user Optional ntfy username for authentication
    * @param string|null $password Optional ntfy password for authentication
    * @param string|null $token Optional ntfy token for authentication
-   * @return array{success:bool,error:string|null}
+   * @return array{success:bool,error:string|null,request_id:string|null} Note: request_id is always null for ntfy
    */
   public function sendAlert(string $topic, string $title, string $message, ?string $url = null, ?string $user = null, ?string $password = null, ?string $token = null): array
   {
     $topic = trim($topic);
     if ($topic === '') {
-      return ['success' => false, 'error' => 'Empty topic'];
+      return ['success' => false, 'error' => 'Empty topic', 'request_id' => null];
     }
 
     if (!self::isValidTopicName($topic)) {
-      return ['success' => false, 'error' => 'Invalid topic name: Topic names can only contain letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-)'];
+      return ['success' => false, 'error' => 'Invalid topic name: Topic names can only contain letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-)', 'request_id' => null];
     }
 
     try {
@@ -414,7 +414,7 @@ class NtfyNotifier
         if ($this->logger) {
           $this->logger->info('Ntfy sendAlert success', ['topic' => $topic, 'status' => $status]);
         }
-        return ['success' => true, 'error' => null];
+        return ['success' => true, 'error' => null, 'request_id' => null];
       }
       
       $responseBody = (string)$resp->getBody();
@@ -422,20 +422,20 @@ class NtfyNotifier
       if ($this->logger) {
         $this->logger->error('Ntfy sendAlert failed', ['status' => $status, 'body' => $responseBody]);
       }
-      return ['success' => false, 'error' => $error];
+      return ['success' => false, 'error' => $error, 'request_id' => null];
       
     } catch (GuzzleException $ge) {
       $error = 'Guzzle exception: ' . $ge->getMessage();
       if ($this->logger) {
         $this->logger->error('Ntfy sendAlert exception', ['error' => $error]);
       }
-      return ['success' => false, 'error' => $error];
+      return ['success' => false, 'error' => $error, 'request_id' => null];
     } catch (Throwable $e) {
       $error = 'Exception: ' . $e->getMessage();
       if ($this->logger) {
         $this->logger->error('Ntfy sendAlert throwable', ['error' => $error]);
       }
-      return ['success' => false, 'error' => $error];
+      return ['success' => false, 'error' => $error, 'request_id' => null];
     }
   }
 }

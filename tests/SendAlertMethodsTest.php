@@ -108,6 +108,7 @@ class SendAlertMethodsTest extends TestCase
 
         $this->assertTrue($result['success']);
         $this->assertNull($result['error']);
+        $this->assertNull($result['request_id']); // ntfy doesn't provide request_id
     }
 
     public function testNtfySendAlertInvalidTopic(): void
@@ -122,6 +123,7 @@ class SendAlertMethodsTest extends TestCase
         );
         $this->assertFalse($result['success']);
         $this->assertStringContainsString('Empty topic', $result['error']);
+        $this->assertNull($result['request_id']);
 
         // Test invalid topic with special characters
         $result = $notifier->sendAlert(
@@ -131,6 +133,7 @@ class SendAlertMethodsTest extends TestCase
         );
         $this->assertFalse($result['success']);
         $this->assertStringContainsString('Invalid topic name', $result['error']);
+        $this->assertNull($result['request_id']);
     }
 
     public function testNtfySendAlertFailure(): void
