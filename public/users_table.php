@@ -120,6 +120,12 @@ if ($requestUri === '/api/users/upload' && $method === 'POST') {
         }
         try {
             $header = fread($handle, 16);
+            // Verify that exactly 16 bytes were read
+            if ($header === false || strlen($header) !== 16) {
+                http_response_code(400);
+                echo json_encode(['success' => false, 'error' => 'Failed to read file header or file is too small']);
+                exit;
+            }
         } finally {
             fclose($handle);
         }
