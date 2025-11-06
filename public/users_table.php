@@ -83,8 +83,18 @@ if ($requestUri === '/api/users/download' && $method === 'GET') {
         }
         
         readfile($tempDb);
+        
+        // Clean up temp file after successful send
+        if ($tempDb !== null && file_exists($tempDb)) {
+            @unlink($tempDb);
+        }
         exit;
     } catch (Exception $e) {
+        // Clean up temp file on error
+        if ($tempDb !== null && file_exists($tempDb)) {
+            @unlink($tempDb);
+        }
+        
         http_response_code(500);
         header('Content-Type: application/json');
         // Don't expose internal exception details
@@ -92,11 +102,6 @@ if ($requestUri === '/api/users/download' && $method === 'GET') {
         // Log the actual error internally for debugging
         error_log('Backup creation failed: ' . $e->getMessage());
         exit;
-    } finally {
-        // Ensure temp file is cleaned up even if readfile() fails
-        if ($tempDb !== null && file_exists($tempDb)) {
-            @unlink($tempDb);
-        }
     }
 }
 
