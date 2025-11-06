@@ -94,7 +94,7 @@ Warning: Continuing without zones data. You can download it later with: php scri
 
 - [`migrate.php`](./migrate.md) - Runs after this script, loads zones data into database
 - [`download_zones.php`](../../scripts/download_zones.php) - Interactive manual download script (source file)
-- [Zones Data Documentation](../zones-data.md) - File format and structure
+- [Zones Data Documentation](./zones-data.md) - File format and structure
 
 ## Error Handling
 
