@@ -200,27 +200,7 @@ Config::initFromEnv();
   - Rarely needs to be changed
   - Can point to custom proxy or mock server for testing
 
-### PUSHOVER_USER
-- **Type**: string
-- **Default**: `"u-example"`
-- **Purpose**: Your Pushover user key
-- **Example**: `PUSHOVER_USER="uQiRzpo4DXghDmr9QzzfQu27cmVRsG"`
-- **Required**: Yes (if PUSHOVER_ENABLED=true)
-- **Notes**:
-  - Get from: https://pushover.net/
-  - 30 characters, starts with 'u'
-  - Can also be a group key
-
-### PUSHOVER_TOKEN
-- **Type**: string
-- **Default**: `"t-example"`
-- **Purpose**: Your Pushover application token
-- **Example**: `PUSHOVER_TOKEN="azGDORePK8gMaC0QOYAMyEEuzJnyUi"`
-- **Required**: Yes (if PUSHOVER_ENABLED=true)
-- **Notes**:
-  - Get from: https://pushover.net/apps/build
-  - 30 characters, starts with 'a'
-  - Create an application to get this token
+**Note**: Per-user Pushover credentials (user key and app token) are now stored in the `users` table and configured via the web UI at http://localhost:8080, not through environment variables.
 
 ## ntfy Configuration
 
@@ -234,61 +214,7 @@ Config::initFromEnv();
   - Do not include topic in URL
   - Self-hosted: https://docs.ntfy.sh/install/
 
-### NTFY_TOPIC
-- **Type**: string
-- **Default**: `""` (empty)
-- **Purpose**: Topic name for publishing notifications
-- **Example**: `NTFY_TOPIC="weather_alerts_home"`
-- **Required**: Yes (if NTFY_ENABLED=true)
-- **Character Set**: Letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-) only
-- **Notes**:
-  - Choose unique topic name
-  - Public topics are visible to anyone who guesses the name
-  - Use authentication for security
-  - Invalid characters will cause configuration errors
-
-### NTFY_TOKEN
-- **Type**: string
-- **Default**: Not set (null)
-- **Purpose**: Bearer token for authentication
-- **Example**: `NTFY_TOKEN="tk_AgQdq7mVBoFD37zQVN29RhuMzNIz2"`
-- **Required**: No (one of TOKEN or USER+PASSWORD for authenticated servers)
-- **Notes**:
-  - Preferred authentication method
-  - Create token in ntfy web UI or CLI
-  - Takes precedence over USER+PASSWORD if both set
-
-### NTFY_USER
-- **Type**: string
-- **Default**: Not set (null)
-- **Purpose**: Username for Basic authentication
-- **Example**: `NTFY_USER="myusername"`
-- **Required**: No (use with NTFY_PASSWORD for Basic auth)
-- **Notes**:
-  - Alternative to bearer token
-  - Must be used with NTFY_PASSWORD
-  - NTFY_TOKEN takes precedence if both set
-
-### NTFY_PASSWORD
-- **Type**: string
-- **Default**: Not set (null)
-- **Purpose**: Password for Basic authentication
-- **Example**: `NTFY_PASSWORD="mypassword"`
-- **Required**: No (use with NTFY_USER for Basic auth)
-- **Notes**:
-  - Alternative to bearer token
-  - Must be used with NTFY_USER
-  - NTFY_TOKEN takes precedence if both set
-
-### NTFY_TITLE_PREFIX
-- **Type**: string
-- **Default**: Not set (null)
-- **Purpose**: Prefix added to all notification titles
-- **Example**: `NTFY_TITLE_PREFIX="[Weather]"`
-- **Notes**:
-  - Useful for distinguishing alert sources
-  - Added before the event name
-  - Space automatically added after prefix
+**Note**: Per-user ntfy settings (topic, auth token, user/password) are now stored in the `users` table and configured via the web UI at http://localhost:8080, not through environment variables. Each user can have their own ntfy topic and authentication credentials.
 
 ## Configuration Validation
 
