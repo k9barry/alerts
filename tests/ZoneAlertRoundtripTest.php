@@ -11,7 +11,7 @@ class ZoneAlertRoundtripTest extends TestCase
 
         // Create minimal schema for test (in-memory DB from tests/bootstrap.php)
         $pdo->exec("CREATE TABLE IF NOT EXISTS zones (idx INTEGER PRIMARY KEY AUTOINCREMENT, NAME TEXT, STATE TEXT, ZONE TEXT);");
-        $pdo->exec("CREATE TABLE IF NOT EXISTS users (idx INTEGER PRIMARY KEY AUTOINCREMENT, FirstName TEXT, LastName TEXT, Email TEXT, Timezone TEXT, PushoverUser TEXT, PushoverToken TEXT, NtfyUser TEXT, NtfyPassword TEXT, NtfyToken TEXT, ZoneAlert TEXT);");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS users (idx INTEGER PRIMARY KEY AUTOINCREMENT, FirstName TEXT, LastName TEXT, Email TEXT UNIQUE, Timezone TEXT, PushoverUser TEXT, PushoverToken TEXT, NtfyUser TEXT, NtfyPassword TEXT, NtfyToken TEXT, ZoneAlert TEXT);");
 
         // Insert zones
         $ins = $pdo->prepare("INSERT INTO zones (NAME, STATE, ZONE) VALUES (?, ?, ?)");
