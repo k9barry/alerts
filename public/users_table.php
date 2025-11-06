@@ -1773,6 +1773,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!response.ok) {
           const error = await response.json();
           alert('Download failed: ' + (error.error || 'Unknown error'));
+          downloadBtn.disabled = false;
+          downloadBtn.innerHTML = '<span>⬇️</span> Download Users';
           return;
         }
         
@@ -1792,12 +1794,13 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => {
           downloadBtn.innerHTML = '<span>⬇️</span> Download Users';
           downloadBtn.style.background = '';
+          downloadBtn.disabled = false;
         }, 2000);
       } catch (error) {
         console.error('Download error:', error);
         alert('Download failed: ' + error.message);
-      } finally {
         downloadBtn.disabled = false;
+        downloadBtn.innerHTML = '<span>⬇️</span> Download Users';
       }
     });
   }
