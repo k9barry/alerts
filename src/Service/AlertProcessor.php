@@ -140,8 +140,8 @@ final class AlertProcessor
           }
 
           if (!$anyMatch) {
-            // no users matched this alert; record as processed with no recipients
-            $this->alerts->insertSentResult($p, ['status' => 'no_match', 'attempts' => 0, 'error' => 'no matching user zone']);
+            // no users matched this alert; skip recording to sent_alerts table
+            // (only messages that have matching results and get sent should be recorded)
           }
         } catch (Throwable $e) {
           LoggerFactory::get()->error('Failed processing pending alert', [
