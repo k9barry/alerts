@@ -218,6 +218,8 @@ WHERE DATE(notified_at) = DATE('now');
 
 **Purpose**: NWS weather zones for geographic filtering
 
+**Role in Alert Workflow**: When alerts are fetched from the weather.gov API, they contain SAME codes and UGC zone codes. The application matches these codes against the STATE_ZONE values in this table and filters alerts based on each user's zone subscriptions (stored in the users.ZoneAlert JSON array). Only alerts matching a user's subscribed zones trigger notifications.
+
 **Columns**:
 - **idx** (INTEGER PRIMARY KEY AUTOINCREMENT): Auto-incrementing unique identifier
 - **STATE** (TEXT NOT NULL): Two-letter state code (e.g., "IN", "CA")
@@ -299,12 +301,18 @@ SELECT idx, FirstName, LastName, Email FROM users;
 -- Find user by email
 SELECT * FROM users WHERE Email = 'user@example.com';
 
--- Get users subscribed to specific zone
-SELECT * FROM users WHERE ZoneAlert LIKE '%INC097%';
+-- Get users subscribed to specific zone (using JSON functions for efficiency)
+SELECT * FROM users 
+WHERE EXISTS (
+    SELECT 1 FROM json_each(ZoneAlert) 
+    WHERE json_each.value = 'INC097'
+);
 
 -- Count users
 SELECT COUNT(*) FROM users;
 ```
+
+**Note on JSON Queries**: While `LIKE '%INC097%'` can work for simple searches, using SQLite's JSON functions (`json_each()`, `json_extract()`) is more reliable and efficient for querying JSON arrays. The `json_each()` function properly parses the JSON array and iterates through values.
 
 ## Data Types and Storage
 
