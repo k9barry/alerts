@@ -276,31 +276,190 @@ if ($requestUri === '/api/test-alert' && $method === 'POST') {
     
     try {
         $data = json_decode(file_get_contents('php://input'), true) ?: [];
+        
+        // Get user data from request
         $userId = $data['userId'] ?? null;
+        $firstName = trim($data['firstName'] ?? '');
+        $lastName = trim($data['lastName'] ?? '');
+        $email = trim($data['email'] ?? '');
+        $pushoverUser = trim($data['pushoverUser'] ?? '');
+        $pushoverToken = trim($data['pushoverToken'] ?? '');
+        $ntfyTopic = trim($data['ntfyTopic'] ?? '');
+        $ntfyUser = trim($data['ntfyUser'] ?? '');
+        $ntfyPassword = trim($data['ntfyPassword'] ?? '');
+        $ntfyToken = trim($data['ntfyToken'] ?? '');
         
-        if (!$userId) {
+        // Validate required fields
+        if (!$firstName || !$lastName || !$email) {
             http_response_code(400);
-            echo json_encode(['success' => false, 'error' => 'User ID is required']);
+            echo json_encode(['success' => false, 'error' => 'First Name, Last Name, and Email are required']);
             exit;
         }
         
-        // Get user details
-        $stmt = $pdo->prepare("SELECT * FROM users WHERE idx = ?");
-        $stmt->execute([$userId]);
-        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        // Check if at least one notification service is configured
+        $hasPushover = !empty($pushoverUser) && !empty($pushoverToken);
+        $hasNtfy = !empty($ntfyTopic);
         
-        if (!$user) {
-            http_response_code(404);
-            echo json_encode(['success' => false, 'error' => 'User not found']);
+        if (!$hasPushover && !$hasNtfy) {
+            http_response_code(400);
+            echo json_encode(['success' => false, 'error' => 'At least one notification service (Pushover or Ntfy) must be configured']);
             exit;
         }
         
-        // Execute test_alert_workflow.php script in non-interactive mode
-        // For now, return success and indicate it should be run via CLI
+        // Fetch a random alert from incoming_alerts for testing
+        $stmt = $pdo->query("SELECT * FROM incoming_alerts ORDER BY RANDOM() LIMIT 1");
+        $testAlert = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$testAlert) {
+            // No alerts available, create a mock alert
+            $testAlert = [
+                'id' => 'TEST-' . time(),
+                'event' => 'Test Weather Alert',
+                'severity' => 'Minor',
+                'certainty' => 'Likely',
+                'urgency' => 'Expected',
+                'headline' => 'This is a test alert to verify your notification settings',
+                'description' => 'This is a test notification sent from the Weather Alerts system. If you receive this, your notification settings are working correctly!',
+                'area_desc' => 'Test Area',
+                'effective' => date('Y-m-d H:i:s'),
+                'expires' => date('Y-m-d H:i:s', strtotime('+1 hour'))
+            ];
+        }
+        
+        // Build test message
+        $severity = $testAlert['severity'] ?? 'Unknown';
+        $certainty = $testAlert['certainty'] ?? 'Unknown';
+        $urgency = $testAlert['urgency'] ?? 'Unknown';
+        $event = $testAlert['event'] ?? 'Weather Alert';
+        $headline = $testAlert['headline'] ?? '';
+        $description = $testAlert['description'] ?? '';
+        $areaDesc = $testAlert['area_desc'] ?? '';
+        $effective = $testAlert['effective'] ?? '';
+        $expires = $testAlert['expires'] ?? '';
+        
+        $message = "[TEST ALERT]\n\n";
+        $message .= "Event: {$event}\n";
+        $message .= "Severity: {$severity} | Certainty: {$certainty} | Urgency: {$urgency}\n";
+        if ($headline) $message .= "Headline: {$headline}\n";
+        $message .= "Area: {$areaDesc}\n";
+        if ($effective) $message .= "Effective: {$effective}\n";
+        if ($expires) $message .= "Expires: {$expires}\n";
+        $message .= "\n{$description}\n";
+        
+        $alertUrl = "https://api.weather.gov/alerts/{$testAlert['id']}";
+        
+        $results = [];
+        
+        // Test Pushover if configured
+        if ($hasPushover) {
+            try {
+                $pushover = new \App\Service\PushoverNotifier();
+                $result = $pushover->sendAlert(
+                    $pushoverUser,
+                    $pushoverToken,
+                    $event,
+                    $message,
+                    $alertUrl
+                );
+                
+                if ($result['success']) {
+                    $results['pushover'] = [
+                        'status' => 'SUCCESS',
+                        'message' => 'Test alert sent successfully via Pushover!',
+                        'request_id' => $result['request_id'] ?? null
+                    ];
+                } else {
+                    $errorMsg = $result['error'] ?? 'Unknown error';
+                    $suggestion = '';
+                    
+                    if (strpos($errorMsg, 'user') !== false || strpos($errorMsg, 'token') !== false) {
+                        $suggestion = 'Check that your Pushover User key and API Token are correct.';
+                    } elseif (strpos($errorMsg, 'network') !== false || strpos($errorMsg, 'timeout') !== false) {
+                        $suggestion = 'Network error. Check your internet connection.';
+                    } else {
+                        $suggestion = 'Verify your Pushover credentials in the app settings.';
+                    }
+                    
+                    $results['pushover'] = [
+                        'status' => 'ERROR',
+                        'message' => 'Failed to send: ' . $errorMsg,
+                        'suggestion' => $suggestion
+                    ];
+                }
+            } catch (Exception $e) {
+                $results['pushover'] = [
+                    'status' => 'ERROR',
+                    'message' => 'Exception: ' . $e->getMessage(),
+                    'suggestion' => 'Check the application logs for more details.'
+                ];
+            }
+        } else {
+            $results['pushover'] = [
+                'status' => 'SKIPPED',
+                'message' => 'Pushover not configured',
+                'suggestion' => 'Add Pushover User and Token to enable Pushover notifications.'
+            ];
+        }
+        
+        // Test Ntfy if configured
+        if ($hasNtfy) {
+            try {
+                $ntfy = new \App\Service\NtfyNotifier();
+                $result = $ntfy->sendAlert(
+                    $ntfyTopic,
+                    $event,
+                    $message,
+                    $alertUrl,
+                    $ntfyUser ?: null,
+                    $ntfyPassword ?: null,
+                    $ntfyToken ?: null
+                );
+                
+                if ($result['success']) {
+                    $results['ntfy'] = [
+                        'status' => 'SUCCESS',
+                        'message' => 'Test alert sent successfully via Ntfy!'
+                    ];
+                } else {
+                    $errorMsg = $result['error'] ?? 'Unknown error';
+                    $suggestion = '';
+                    
+                    if (strpos($errorMsg, 'topic') !== false) {
+                        $suggestion = 'Check that your Ntfy Topic name is correct and follows naming rules (letters, numbers, underscores, hyphens only).';
+                    } elseif (strpos($errorMsg, 'auth') !== false || strpos($errorMsg, 'unauthorized') !== false) {
+                        $suggestion = 'Check your Ntfy authentication credentials (username/password or token).';
+                    } elseif (strpos($errorMsg, 'network') !== false || strpos($errorMsg, 'timeout') !== false) {
+                        $suggestion = 'Network error. Check your internet connection and Ntfy server availability.';
+                    } else {
+                        $suggestion = 'Verify your Ntfy settings and check that the topic exists.';
+                    }
+                    
+                    $results['ntfy'] = [
+                        'status' => 'ERROR',
+                        'message' => 'Failed to send: ' . $errorMsg,
+                        'suggestion' => $suggestion
+                    ];
+                }
+            } catch (Exception $e) {
+                $results['ntfy'] = [
+                    'status' => 'ERROR',
+                    'message' => 'Exception: ' . $e->getMessage(),
+                    'suggestion' => 'Check the application logs for more details.'
+                ];
+            }
+        } else {
+            $results['ntfy'] = [
+                'status' => 'SKIPPED',
+                'message' => 'Ntfy not configured',
+                'suggestion' => 'Add Ntfy Topic to enable Ntfy notifications.'
+            ];
+        }
+        
         echo json_encode([
-            'success' => true, 
-            'message' => 'Test alert feature available via CLI only. Run: php scripts/test_alert_workflow.php',
-            'user' => $user['FirstName'] . ' ' . $user['LastName']
+            'success' => true,
+            'message' => 'Test completed',
+            'results' => $results,
+            'user' => $firstName . ' ' . $lastName
         ]);
         exit;
     } catch (Exception $e) {
@@ -586,15 +745,17 @@ table{width:100%;margin-top:16px;border-collapse:collapse;background:#fff;border
 th,td{padding:12px;border-bottom:1px solid #eef2f6;text-align:left;font-size:14px}
 th{background:#f8fafc;font-weight:700}
 .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);align-items:center;justify-content:center;padding:20px;z-index:999}
-.modal-content{background:#ffffff;padding:20px;width:100%;max-width:760px;border-radius:10px;box-shadow:0 12px 30px rgba(2,6,23,.2);max-height:90vh;overflow:auto}
-.form-row{display:flex;gap:12px;flex-wrap:wrap}
-.form-group{margin-bottom:12px;flex:1;min-width:180px}
-.form-group label{display:block;font-size:13px;margin-bottom:6px;color:#222}
-.form-group input, .form-group select, .form-group textarea{width:100%;padding:8px;border:1px solid #dde6ef;border-radius:6px;font-size:14px}
-.select-multi{width:100%;border:1px solid #dde6ef;border-radius:6px;padding:6px;background:#fff}
-.zone-search{width:100%;padding:8px;border:1px solid #dde6ef;border-radius:6px;margin-bottom:8px}
-.small{font-size:13px;color:#6b7280}
-.actions{display:flex;gap:8px;margin-top:12px}
+.modal-content{background:#ffffff;padding:32px;width:100%;max-width:820px;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-height:90vh;overflow:auto}
+.modal-content h2{margin:0 0 24px 0;font-size:28px;font-weight:700;color:#1e3a8a;border-bottom:3px solid #3b82f6;padding-bottom:12px}
+.form-row{display:flex;gap:16px;flex-wrap:wrap}
+.form-group{margin-bottom:16px;flex:1;min-width:200px}
+.form-group label{display:block;font-size:14px;margin-bottom:8px;color:#1e3a8a;font-weight:600}
+.form-group input, .form-group select, .form-group textarea{width:100%;padding:10px 12px;border:2px solid #e5e7eb;border-radius:8px;font-size:14px;transition:all 0.2s ease}
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,0.1)}
+.select-multi{width:100%;border:2px solid #e5e7eb;border-radius:8px;padding:8px;background:#fff}
+.zone-search{width:100%;padding:10px 12px;border:2px solid #e5e7eb;border-radius:8px;margin-bottom:10px}
+.small{font-size:13px;color:#6b7280;font-style:italic}
+.actions{display:flex;gap:10px;margin-top:20px;padding-top:20px;border-top:2px solid #e5e7eb;justify-content:flex-end}
 .zones-cell{cursor:help;text-decoration:underline dotted}
 .zone-popup{position:fixed;background:#fff;border:1px solid rgba(0,0,0,.12);padding:12px;border-radius:10px;box-shadow:0 12px 36px rgba(2,6,23,.18);max-width:640px;max-height:60vh;overflow:auto;z-index:1101;font-size:14px}
 .zone-popup .copy-btn{display:inline-block;margin-top:10px;padding:8px 10px;border-radius:6px;background:#0d6efd;color:#fff;font-weight:600;cursor:pointer}
@@ -610,6 +771,17 @@ th{background:#f8fafc;font-weight:700}
 input[type="file"]{display:none;}
 .file-upload-label{display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:linear-gradient(135deg,#17a2b8 0%,#138496 100%);color:white;border-radius:8px;cursor:pointer;font-weight:600;font-size:14px;transition:all 0.2s ease;}
 .file-upload-label:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,0.15);}
+.test-result-card{background:linear-gradient(135deg,#f8fafc 0%,#e0e7ff 100%);border:2px solid #3b82f6;border-radius:12px;padding:20px;margin:16px 0;box-shadow:0 4px 12px rgba(59,130,246,0.15)}
+.test-result-card h3{margin:0 0 12px 0;color:#1e3a8a;font-size:18px;font-weight:700}
+.test-result-card .result-row{display:flex;align-items:flex-start;gap:10px;margin:8px 0;padding:10px;background:white;border-radius:8px;border-left:4px solid #94a3b8}
+.test-result-card .result-row.success{border-left-color:#10b981}
+.test-result-card .result-row.error{border-left-color:#ef4444}
+.test-result-card .result-row.warning{border-left-color:#f59e0b}
+.test-result-card .result-icon{font-size:20px;flex-shrink:0}
+.test-result-card .result-content{flex:1}
+.test-result-card .result-label{font-weight:600;color:#1e3a8a;margin-bottom:4px}
+.test-result-card .result-message{color:#374151;font-size:14px;line-height:1.5}
+.test-result-card .result-suggestion{color:#6b7280;font-size:13px;font-style:italic;margin-top:6px;padding:8px;background:#f9fafb;border-radius:6px}
 </style>
 
 <!-- removed early stub functions; wiring is done via event listeners later -->
@@ -674,6 +846,10 @@ window.closeModal = closeModal;
 <div id="userModal" class="modal" aria-hidden="true">
   <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
     <h2 id="modalTitle">User</h2>
+    
+    <!-- Test results card (hidden by default) -->
+    <div id="testResultCard" class="test-result-card" style="display:none"></div>
+    
     <form id="userForm">
       <input type="hidden" id="userId">
       <div class="form-row">
@@ -720,8 +896,9 @@ window.closeModal = closeModal;
       </div>
 
       <div class="actions">
-        <button type="submit" class="btn btn-primary">Save</button>
-        <button id="cancelUserBtn" type="button" class="btn btn-secondary">Cancel</button>
+        <button type="submit" class="btn btn-primary">💾 Save</button>
+        <button id="testAlertBtn" type="button" class="btn btn-info">🧪 Test Alert</button>
+        <button id="cancelUserBtn" type="button" class="btn btn-secondary">✖ Cancel</button>
       </div>
     </form>
   </div>
@@ -1339,6 +1516,139 @@ document.addEventListener('DOMContentLoaded', () => {
     clearAllZoneSelections(); 
   });
 
+  // Wire Test Alert button
+  const testAlertBtn = document.getElementById('testAlertBtn');
+  if (testAlertBtn) {
+    testAlertBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      
+      // Hide any previous test results
+      const testResultCard = document.getElementById('testResultCard');
+      if (testResultCard) testResultCard.style.display = 'none';
+      
+      // Get user data from form
+      const userId = document.getElementById('userId').value;
+      const firstName = document.getElementById('firstName').value.trim();
+      const lastName = document.getElementById('lastName').value.trim();
+      const email = document.getElementById('email').value.trim();
+      const pushoverUser = document.getElementById('pushoverUser').value.trim();
+      const pushoverToken = document.getElementById('pushoverToken').value.trim();
+      const ntfyTopic = document.getElementById('ntfyTopic').value.trim();
+      const ntfyUser = document.getElementById('ntfyUser').value.trim();
+      const ntfyPassword = document.getElementById('ntfyPassword').value.trim();
+      const ntfyToken = document.getElementById('ntfyToken').value.trim();
+      
+      // Validate required fields
+      if (!firstName || !lastName || !email) {
+        alert('Please fill in First Name, Last Name, and Email before testing.');
+        return;
+      }
+      
+      // Check if at least one notification service is configured
+      const hasPushover = pushoverUser && pushoverToken;
+      const hasNtfy = ntfyTopic;
+      
+      if (!hasPushover && !hasNtfy) {
+        alert('Please configure at least one notification service (Pushover or Ntfy) before testing.');
+        return;
+      }
+      
+      try {
+        testAlertBtn.disabled = true;
+        testAlertBtn.innerHTML = '<span>⏳</span> Testing...';
+        
+        const response = await fetch('/api/test-alert', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: userId || null,
+            firstName,
+            lastName,
+            email,
+            pushoverUser,
+            pushoverToken,
+            ntfyTopic,
+            ntfyUser,
+            ntfyPassword,
+            ntfyToken
+          })
+        });
+        
+        const result = await response.json();
+        
+        // Display results in card
+        if (testResultCard) {
+          let html = '<h3>🧪 Test Alert Results</h3>';
+          
+          if (result.success && result.results) {
+            const results = result.results;
+            
+            // Pushover result
+            if (results.pushover) {
+              const isPushoverSuccess = results.pushover.status === 'SUCCESS';
+              const isPushoverSkipped = results.pushover.status === 'SKIPPED';
+              const rowClass = isPushoverSuccess ? 'success' : (isPushoverSkipped ? 'warning' : 'error');
+              const icon = isPushoverSuccess ? '✅' : (isPushoverSkipped ? '⊘' : '❌');
+              
+              html += `<div class="result-row ${rowClass}">
+                <div class="result-icon">${icon}</div>
+                <div class="result-content">
+                  <div class="result-label">Pushover</div>
+                  <div class="result-message">${htmlEscape(results.pushover.message || results.pushover.status)}</div>`;
+              
+              if (results.pushover.suggestion) {
+                html += `<div class="result-suggestion">💡 ${htmlEscape(results.pushover.suggestion)}</div>`;
+              }
+              
+              html += `</div></div>`;
+            }
+            
+            // Ntfy result
+            if (results.ntfy) {
+              const isNtfySuccess = results.ntfy.status === 'SUCCESS';
+              const isNtfySkipped = results.ntfy.status === 'SKIPPED';
+              const rowClass = isNtfySuccess ? 'success' : (isNtfySkipped ? 'warning' : 'error');
+              const icon = isNtfySuccess ? '✅' : (isNtfySkipped ? '⊘' : '❌');
+              
+              html += `<div class="result-row ${rowClass}">
+                <div class="result-icon">${icon}</div>
+                <div class="result-content">
+                  <div class="result-label">Ntfy</div>
+                  <div class="result-message">${htmlEscape(results.ntfy.message || results.ntfy.status)}</div>`;
+              
+              if (results.ntfy.suggestion) {
+                html += `<div class="result-suggestion">💡 ${htmlEscape(results.ntfy.suggestion)}</div>`;
+              }
+              
+              html += `</div></div>`;
+            }
+          } else if (result.error) {
+            html += `<div class="result-row error">
+              <div class="result-icon">❌</div>
+              <div class="result-content">
+                <div class="result-label">Test Failed</div>
+                <div class="result-message">${htmlEscape(result.error)}</div>
+              </div>
+            </div>`;
+          }
+          
+          testResultCard.innerHTML = html;
+          testResultCard.style.display = 'block';
+          
+          // Scroll result card into view
+          testResultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      } catch (error) {
+        console.error('Test alert error:', error);
+        alert('Test failed: ' + error.message);
+      } finally {
+        testAlertBtn.disabled = false;
+        testAlertBtn.innerHTML = '<span>🧪</span> Test Alert';
+      }
+    });
+  }
+
   // Add real-time validation for NTFY topic field
   const ntfyTopicInput = document.getElementById('ntfyTopic');
   if (ntfyTopicInput) {
@@ -1457,7 +1767,7 @@ document.addEventListener('DOMContentLoaded', () => {
     downloadBtn.addEventListener('click', async () => {
       try {
         downloadBtn.disabled = true;
-        downloadBtn.textContent = 'Downloading...';
+        downloadBtn.innerHTML = '<span>⏳</span> Downloading...';
         
         const response = await fetch('/api/users/download', { credentials: 'include' });
         if (!response.ok) {
@@ -1475,12 +1785,19 @@ document.addEventListener('DOMContentLoaded', () => {
         a.click();
         window.URL.revokeObjectURL(url);
         a.remove();
+        
+        // Show success feedback
+        downloadBtn.innerHTML = '<span>✓</span> Downloaded!';
+        downloadBtn.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+        setTimeout(() => {
+          downloadBtn.innerHTML = '<span>⬇️</span> Download Users';
+          downloadBtn.style.background = '';
+        }, 2000);
       } catch (error) {
         console.error('Download error:', error);
         alert('Download failed: ' + error.message);
       } finally {
         downloadBtn.disabled = false;
-        downloadBtn.innerHTML = '<span>⬇️</span> Download Users';
       }
     });
   }
