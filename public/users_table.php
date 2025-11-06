@@ -525,11 +525,6 @@ input[type="file"]{display:none;}
         <span>⬆️</span> Upload Users
       </label>
       <input type="file" id="uploadUsersFile" accept=".sqlite,.db" />
-      <div style="margin-left:auto;display:flex;gap:8px">
-        <a class="nav-link" href="/view_tables.php" style="display:inline-flex;align-items:center;gap:8px">
-          <span>📊</span> View Tables
-        </a>
-      </div>
     </div>
     
     <table id="usersTable">
