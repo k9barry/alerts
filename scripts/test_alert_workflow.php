@@ -365,6 +365,29 @@ try {
         $results['ntfy'] = 'SKIPPED: ' . $reason;
     }
     
+    // Record test result in sent_alerts table
+    echo "\n  Recording test result in sent_alerts table...\n";
+    try {
+        $repo->insertSentResult($testAlert, [
+            'status' => 'test',
+            'attempts' => 1,
+            'error' => null,
+            'request_id' => $result['request_id'] ?? null,
+            'user_id' => $selectedUser['idx']
+        ]);
+        echo "    ✓ Test result recorded in sent_alerts\n";
+        $logger->info("Test result recorded in sent_alerts", [
+            'alert_id' => $testAlert['id'],
+            'user_id' => $selectedUser['idx']
+        ]);
+    } catch (Exception $e) {
+        echo "    ✗ Failed to record in sent_alerts: {$e->getMessage()}\n";
+        $logger->error("Failed to record test result", [
+            'error' => $e->getMessage(),
+            'alert_id' => $testAlert['id']
+        ]);
+    }
+    
     // Step 6: Report results
     echo "\n";
     echo str_repeat("=", 70) . "\n";

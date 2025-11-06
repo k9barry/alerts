@@ -495,58 +495,25 @@ th{background:#f8fafc;font-weight:700}
 .zone-row .col-county{width:20%}
 .zone-row .col-statezone{width:14%}
 .zone-row .col-fips{width:14%}
-input[type="file"]{display:none;}
-.file-upload-label{display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:linear-gradient(135deg,#17a2b8 0%,#138496 100%);color:white;border-radius:8px;cursor:pointer;font-weight:600;font-size:14px;transition:all 0.2s ease;}
-.file-upload-label:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,0.15);}
-.btn-success{background:linear-gradient(135deg,#28a745 0%,#218838 100%);color:white;}
 </style>
 
 <!-- removed early stub functions; wiring is done via event listeners later -->
 </head>
 <body>
-<div class="page-container">
-  <div class="page-header">
-    <span class="header-icon">🌦️</span>
-    <div style="display:inline-block;vertical-align:middle">
-      <h1><span class="header-icon" style="display:inline;font-size:inherit;margin:0">⚡</span> Weather Alerts - User Management</h1>
-      <p class="subtitle">Manage users and configure weather alert notifications</p>
-    </div>
-  </div>
-
-  <div class="content-card">
-    <div class="toolbar">
-      <button class="btn btn-primary" id="addUserBtn">
-        <span>➕</span> Add User
-      </button>
-      <button class="btn btn-success" id="downloadUsersBtn">
-        <span>⬇️</span> Download Users
-      </button>
-      <label for="uploadUsersFile" class="file-upload-label">
-        <span>⬆️</span> Upload Users
-      </label>
-      <input type="file" id="uploadUsersFile" accept=".sqlite,.db" />
-      <div style="margin-left:auto;display:flex;gap:8px">
-        <a class="nav-link" href="/view_tables.php" style="display:inline-flex;align-items:center;gap:8px">
-          <span>📊</span> View Tables
-        </a>
-      </div>
-    </div>
-    
-    <table id="usersTable">
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>Name</th>
-          <th>Email</th>
-          <th>Timezone</th>
-          <th>Zones</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </div>
-</div>
+<header class="header">
+  <h1 style="margin:0">Users</h1>
+  <nav>
+    <a class="nav-link" href="/view_tables.php">View Tables</a>
+    <a class="nav-link primary" href="/users_table.php" style="margin-left:8px">Users</a>
+  </nav>
+</header>
+<button class="btn btn-primary" id="addUserBtn">Add User</button>
+<table id="usersTable" style="border:0">
+  <thead>
+    <tr><th>ID</th><th>Name</th><th>Email</th><th>Timezone</th><th>Zones</th><th>Actions</th></tr>
+  </thead>
+  <tbody></tbody>
+</table>
 
 <!-- ensure closeModal is defined as a true global function before any onclick runs -->
 <script>
@@ -1344,78 +1311,6 @@ document.addEventListener('DOMContentLoaded', () => {
   setTimeout(() => {
       try { if (typeof loadUsers === 'function') loadUsers(); } catch (err) { console.error('startup load error', err); }
   }, 100);
-
-  // Download users button handler
-  const downloadBtn = document.getElementById('downloadUsersBtn');
-  if (downloadBtn) {
-    downloadBtn.addEventListener('click', async () => {
-      try {
-        downloadBtn.disabled = true;
-        downloadBtn.textContent = 'Downloading...';
-        
-        const response = await fetch('/api/users/download', { credentials: 'include' });
-        if (!response.ok) {
-          const error = await response.json();
-          alert('Download failed: ' + (error.error || 'Unknown error'));
-          return;
-        }
-        
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'users_backup_' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '.sqlite';
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        a.remove();
-      } catch (error) {
-        console.error('Download error:', error);
-        alert('Download failed: ' + error.message);
-      } finally {
-        downloadBtn.disabled = false;
-        downloadBtn.innerHTML = '<span>⬇️</span> Download Users';
-      }
-    });
-  }
-
-  // Upload users file handler
-  const uploadInput = document.getElementById('uploadUsersFile');
-  if (uploadInput) {
-    uploadInput.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-
-      if (!confirm(`Are you sure you want to restore users from "${file.name}"? This will REPLACE all current users!`)) {
-        uploadInput.value = '';
-        return;
-      }
-
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-
-        const response = await fetch('/api/users/upload', {
-          method: 'POST',
-          credentials: 'include',
-          body: formData
-        });
-
-        const result = await response.json();
-        if (response.ok && result.success) {
-          alert(result.message || 'Users restored successfully!');
-          if (typeof loadUsers === 'function') loadUsers();
-        } else {
-          alert('Upload failed: ' + (result.error || 'Unknown error'));
-        }
-      } catch (error) {
-        console.error('Upload error:', error);
-        alert('Upload failed: ' + error.message);
-      } finally {
-        uploadInput.value = '';
-      }
-    });
-  }
 });
 </script>
 </body>

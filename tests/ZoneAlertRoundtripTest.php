@@ -9,9 +9,13 @@ class ZoneAlertRoundtripTest extends TestCase
         // Ensure we have a PDO connection
         $pdo = \App\DB\Connection::get();
 
+        // Drop and recreate tables to ensure clean state
+        $pdo->exec("DROP TABLE IF EXISTS users");
+        $pdo->exec("DROP TABLE IF EXISTS zones");
+        
         // Create minimal schema for test (in-memory DB from tests/bootstrap.php)
-        $pdo->exec("CREATE TABLE IF NOT EXISTS zones (idx INTEGER PRIMARY KEY AUTOINCREMENT, NAME TEXT, STATE TEXT, ZONE TEXT);");
-        $pdo->exec("CREATE TABLE IF NOT EXISTS users (idx INTEGER PRIMARY KEY AUTOINCREMENT, FirstName TEXT, LastName TEXT, Email TEXT UNIQUE, Timezone TEXT, PushoverUser TEXT, PushoverToken TEXT, NtfyUser TEXT, NtfyPassword TEXT, NtfyToken TEXT, ZoneAlert TEXT);");
+        $pdo->exec("CREATE TABLE zones (idx INTEGER PRIMARY KEY AUTOINCREMENT, NAME TEXT, STATE TEXT, ZONE TEXT);");
+        $pdo->exec("CREATE TABLE users (idx INTEGER PRIMARY KEY AUTOINCREMENT, FirstName TEXT, LastName TEXT, Email TEXT UNIQUE, Timezone TEXT, PushoverUser TEXT, PushoverToken TEXT, NtfyUser TEXT, NtfyPassword TEXT, NtfyToken TEXT, ZoneAlert TEXT);");
 
         // Insert zones
         $ins = $pdo->prepare("INSERT INTO zones (NAME, STATE, ZONE) VALUES (?, ?, ?)");
