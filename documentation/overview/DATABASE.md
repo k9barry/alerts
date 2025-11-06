@@ -1,6 +1,6 @@
 # Database Schema
 
-The Alerts application uses SQLite as its database engine with four main tables for tracking weather alerts through their lifecycle.
+The Alerts application uses SQLite as its database engine with six tables: four main tables for tracking weather alerts through their lifecycle, plus zones and users tables for geographic filtering and user management.
 
 ## Database Technology
 
@@ -19,7 +19,7 @@ The Alerts application uses SQLite as its database engine with four main tables 
 
 ## Table Overview
 
-The application uses four tables to track alert lifecycle:
+The application uses four tables to track the alert lifecycle, plus two additional tables for user management and geographic filtering:
 
 ```
 ┌─────────────────┐
@@ -213,6 +213,106 @@ GROUP BY result_status;
 SELECT * FROM sent_alerts 
 WHERE DATE(notified_at) = DATE('now');
 ```
+
+### zones
+
+**Purpose**: NWS weather zones for geographic filtering
+
+**Role in Alert Workflow**: When alerts are fetched from the weather.gov API, they contain SAME codes and UGC zone codes. The application matches these codes against the STATE_ZONE values in this table and filters alerts based on each user's zone subscriptions (stored in the users.ZoneAlert JSON array). Only alerts matching a user's subscribed zones trigger notifications.
+
+**Columns**:
+- **idx** (INTEGER PRIMARY KEY AUTOINCREMENT): Auto-incrementing unique identifier
+- **STATE** (TEXT NOT NULL): Two-letter state code (e.g., "IN", "CA")
+- **ZONE** (TEXT NOT NULL): Zone code (e.g., "Z001", "C001")
+- **CWA** (TEXT): County Warning Area
+- **NAME** (TEXT NOT NULL): Zone name (e.g., "Posey County")
+- **STATE_ZONE** (TEXT): Combined state and zone code (e.g., "INC001")
+- **COUNTY** (TEXT): County name
+- **FIPS** (TEXT): 6-digit FIPS code
+- **TIME_ZONE** (TEXT): IANA timezone (e.g., "America/Indiana/Indianapolis")
+- **FE_AREA** (TEXT): Forecast area code
+- **LAT** (REAL): Latitude
+- **LON** (REAL): Longitude
+
+**Constraints**:
+- `UNIQUE(STATE, ZONE)`: Prevents duplicate state/zone combinations
+
+**Indexes**:
+- `idx_zones_state`: Index on STATE column
+- `idx_zones_name`: Index on NAME column
+- `idx_zones_state_zone`: Index on STATE_ZONE column
+
+**Characteristics**:
+- Loaded from NWS zones data file (bp18mr25.dbx) during migration
+- Contains ~3,500 zones covering all US states and territories
+- Used to filter alerts by geographic area
+- Updated infrequently (when NWS updates zone definitions)
+
+**Queries**:
+```sql
+-- Find zones by state
+SELECT * FROM zones WHERE STATE = 'IN';
+
+-- Search zones by name
+SELECT * FROM zones WHERE NAME LIKE '%Marion%';
+
+-- Get zone by STATE_ZONE code
+SELECT * FROM zones WHERE STATE_ZONE = 'INC097';
+```
+
+### users
+
+**Purpose**: User profiles with notification preferences and zone subscriptions
+
+**Columns**:
+- **idx** (INTEGER PRIMARY KEY AUTOINCREMENT): Auto-incrementing unique identifier
+- **FirstName** (TEXT NOT NULL): User's first name
+- **LastName** (TEXT NOT NULL): User's last name
+- **Email** (TEXT NOT NULL UNIQUE): User's email address (unique constraint)
+- **Timezone** (TEXT DEFAULT 'America/New_York'): IANA timezone for localizing alert times
+- **PushoverUser** (TEXT): Pushover user key
+- **PushoverToken** (TEXT): Pushover application token
+- **NtfyUser** (TEXT): ntfy basic auth username
+- **NtfyPassword** (TEXT): ntfy basic auth password
+- **NtfyToken** (TEXT): ntfy bearer token
+- **NtfyTopic** (TEXT): ntfy topic name
+- **ZoneAlert** (TEXT DEFAULT '[]'): JSON array of subscribed zone STATE_ZONE codes
+- **CreatedAt** (TEXT DEFAULT CURRENT_TIMESTAMP): Timestamp when user was created
+- **UpdatedAt** (TEXT DEFAULT CURRENT_TIMESTAMP): Timestamp when user was last updated
+
+**Constraints**:
+- `UNIQUE(Email)`: Each email can only be used once
+
+**Indexes**:
+- `idx_users_email`: Index on Email column
+
+**Characteristics**:
+- Managed through web UI at http://localhost:8080
+- Automatic backup to JSON file on every change (users_backup_YYYY-MM-DD_HH-MM-SS.json)
+- ZoneAlert field contains array of STATE_ZONE codes (e.g., ["INC097", "INC109"])
+- Each user can have different notification channel configurations
+- Users are filtered by matching alert zones against their ZoneAlert subscriptions
+
+**Queries**:
+```sql
+-- List all users
+SELECT idx, FirstName, LastName, Email FROM users;
+
+-- Find user by email
+SELECT * FROM users WHERE Email = 'user@example.com';
+
+-- Get users subscribed to specific zone (using JSON functions for efficiency)
+SELECT * FROM users 
+WHERE EXISTS (
+    SELECT 1 FROM json_each(ZoneAlert) 
+    WHERE json_each.value = 'INC097'
+);
+
+-- Count users
+SELECT COUNT(*) FROM users;
+```
+
+**Note on JSON Queries**: While `LIKE '%INC097%'` can work for simple searches, using SQLite's JSON functions (`json_each()`, `json_extract()`) is more reliable and efficient for querying JSON arrays. The `json_each()` function properly parses the JSON array and iterates through values.
 
 ## Data Types and Storage
 

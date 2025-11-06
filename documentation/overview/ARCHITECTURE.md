@@ -47,7 +47,7 @@ The Alerts application follows a clean layered architecture with clear separatio
                               │
                     ┌─────────▼─────────┐
                     │  SQLite Database  │
-                    │   (4 Tables)      │
+                    │   (6 Tables)      │
                     └───────────────────┘
 ```
 
