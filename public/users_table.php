@@ -1759,7 +1759,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (typeof loadUsers === 'function' && typeof loadZones === 'function') {
           // loadUsers will wait for zones to be loaded before rendering
           loadUsers();
-          return;
+          // Don't return here - we need to continue setting up event listeners below
       }
   } catch (e) { console.error('startup check failed', e); }
   setTimeout(() => {
