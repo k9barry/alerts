@@ -9,6 +9,197 @@ $pdo = Connection::get();
 $requestUri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
+// API endpoint to download users table as SQLite database
+if ($requestUri === '/api/users/download' && $method === 'GET') {
+    header('Content-Type: application/octet-stream');
+    header('Content-Disposition: attachment; filename="users_backup_' . date('Y-m-d_H-i-s') . '.sqlite"');
+    
+    try {
+        // Create temporary SQLite database with users data
+        $tempDb = tempnam(sys_get_temp_dir(), 'users_backup_');
+        // Secure the temporary file with restrictive permissions (owner read/write only)
+        chmod($tempDb, 0600);
+        $tempPdo = new PDO("sqlite:$tempDb");
+        $tempPdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        
+        // Create users table with same schema
+        $tempPdo->exec("CREATE TABLE users (
+            idx INTEGER PRIMARY KEY,
+            FirstName TEXT NOT NULL,
+            LastName TEXT NOT NULL,
+            Email TEXT NOT NULL UNIQUE,
+            Timezone TEXT DEFAULT 'America/New_York',
+            PushoverUser TEXT,
+            PushoverToken TEXT,
+            NtfyUser TEXT,
+            NtfyPassword TEXT,
+            NtfyToken TEXT,
+            NtfyTopic TEXT,
+            ZoneAlert TEXT DEFAULT '[]',
+            CreatedAt TEXT,
+            UpdatedAt TEXT
+        )");
+        
+        // Copy all users data
+        $users = $pdo->query("SELECT * FROM users")->fetchAll(PDO::FETCH_ASSOC);
+        $stmt = $tempPdo->prepare("INSERT INTO users (idx, FirstName, LastName, Email, Timezone, PushoverUser, PushoverToken, NtfyUser, NtfyPassword, NtfyToken, NtfyTopic, ZoneAlert, CreatedAt, UpdatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        
+        foreach ($users as $user) {
+            $stmt->execute([
+                $user['idx'],
+                $user['FirstName'],
+                $user['LastName'],
+                $user['Email'],
+                $user['Timezone'] ?? 'America/New_York',
+                $user['PushoverUser'] ?? '',
+                $user['PushoverToken'] ?? '',
+                $user['NtfyUser'] ?? '',
+                $user['NtfyPassword'] ?? '',
+                $user['NtfyToken'] ?? '',
+                $user['NtfyTopic'] ?? '',
+                $user['ZoneAlert'] ?? '[]',
+                $user['CreatedAt'] ?? null,
+                $user['UpdatedAt'] ?? null
+            ]);
+        }
+        
+        // Close connection and output file
+        $tempPdo = null;
+        readfile($tempDb);
+        unlink($tempDb);
+        exit;
+    } catch (Exception $e) {
+        http_response_code(500);
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'error' => 'Failed to create backup: ' . $e->getMessage()]);
+        exit;
+    }
+}
+
+// API endpoint to upload and restore users table from SQLite database
+if ($requestUri === '/api/users/upload' && $method === 'POST') {
+    header('Content-Type: application/json');
+    
+    try {
+        if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+            http_response_code(400);
+            echo json_encode(['success' => false, 'error' => 'No file uploaded or upload error']);
+            exit;
+        }
+        
+        $uploadedFile = $_FILES['file']['tmp_name'];
+        
+        // Validate it's a SQLite database
+        $uploadPdo = new PDO("sqlite:$uploadedFile");
+        $uploadPdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        
+        // Check if users table exists
+        $tables = $uploadPdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")->fetchAll(PDO::FETCH_COLUMN);
+        if (empty($tables)) {
+            http_response_code(400);
+            echo json_encode(['success' => false, 'error' => 'Invalid file: users table not found']);
+            exit;
+        }
+        
+        // Get users from uploaded database
+        $uploadedUsers = $uploadPdo->query("SELECT * FROM users")->fetchAll(PDO::FETCH_ASSOC);
+        $uploadPdo = null;
+        
+        if (empty($uploadedUsers)) {
+            http_response_code(400);
+            echo json_encode(['success' => false, 'error' => 'No users found in uploaded file']);
+            exit;
+        }
+        
+        // Begin transaction to replace all users
+        $pdo->beginTransaction();
+        
+        try {
+            // Clear existing users
+            $pdo->exec("DELETE FROM users");
+            
+            // Insert uploaded users
+            $stmt = $pdo->prepare("INSERT INTO users (idx, FirstName, LastName, Email, Timezone, PushoverUser, PushoverToken, NtfyUser, NtfyPassword, NtfyToken, NtfyTopic, ZoneAlert, CreatedAt, UpdatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            
+            $count = 0;
+            foreach ($uploadedUsers as $user) {
+                $stmt->execute([
+                    $user['idx'] ?? null,
+                    $user['FirstName'] ?? '',
+                    $user['LastName'] ?? '',
+                    $user['Email'] ?? '',
+                    $user['Timezone'] ?? 'America/New_York',
+                    $user['PushoverUser'] ?? '',
+                    $user['PushoverToken'] ?? '',
+                    $user['NtfyUser'] ?? '',
+                    $user['NtfyPassword'] ?? '',
+                    $user['NtfyToken'] ?? '',
+                    $user['NtfyTopic'] ?? '',
+                    $user['ZoneAlert'] ?? '[]',
+                    $user['CreatedAt'] ?? null,
+                    $user['UpdatedAt'] ?? null
+                ]);
+                $count++;
+            }
+            
+            $pdo->commit();
+            
+            // Create backup after successful upload
+            backupUsersTable($pdo);
+            
+            echo json_encode(['success' => true, 'message' => "Successfully restored {$count} users"]);
+            exit;
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Failed to restore users: ' . $e->getMessage()]);
+        exit;
+    }
+}
+
+// API endpoint to test alert workflow
+if ($requestUri === '/api/test-alert' && $method === 'POST') {
+    header('Content-Type: application/json');
+    
+    try {
+        $data = json_decode(file_get_contents('php://input'), true) ?: [];
+        $userId = $data['userId'] ?? null;
+        
+        if (!$userId) {
+            http_response_code(400);
+            echo json_encode(['success' => false, 'error' => 'User ID is required']);
+            exit;
+        }
+        
+        // Get user details
+        $stmt = $pdo->prepare("SELECT * FROM users WHERE idx = ?");
+        $stmt->execute([$userId]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$user) {
+            http_response_code(404);
+            echo json_encode(['success' => false, 'error' => 'User not found']);
+            exit;
+        }
+        
+        // Execute test_alert_workflow.php script in non-interactive mode
+        // For now, return success and indicate it should be run via CLI
+        echo json_encode([
+            'success' => true, 
+            'message' => 'Test alert feature available via CLI only. Run: php scripts/test_alert_workflow.php',
+            'user' => $user['FirstName'] . ' ' . $user['LastName']
+        ]);
+        exit;
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Test failed: ' . $e->getMessage()]);
+        exit;
+    }
+}
+
 if (preg_match('#^/api/users(?:/(\d+))?$#', $requestUri, $m)) {
     header('Content-Type: application/json');
     $userId = $m[1] ?? null;
@@ -200,15 +391,87 @@ if (strpos($requestUri, '/api/') !== 0) {
 <title>Alerts - Users</title>
 <link rel="stylesheet" href="">
 <style>
-/* updated styles: nicer colors, readable table and modal, better buttons */
-body{font-family:system-ui, -apple-system, "Segoe UI", Roboto, Arial; margin:20px; background:#f4f6f8}
-.header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
-.nav-link{padding:8px 12px;border-radius:6px;text-decoration:none;color:#fff;background:#6c757d}
-.nav-link.primary{background:#0d6efd}
-.btn{padding:8px 12px;border-radius:6px;border:1px solid transparent;cursor:pointer;font-weight:600}
-.btn-primary{background:#0d6efd;color:#fff}
-.btn-secondary{background:#6c757d;color:#fff}
-.btn-danger{background:#dc3545;color:#fff}
+/* Enhanced styles for a beautiful, modern interface */
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  min-height: 100vh;
+}
+.page-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px;
+}
+.page-header {
+  background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+  color: white;
+  padding: 40px;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  margin-bottom: 30px;
+  position: relative;
+  overflow: hidden;
+}
+.page-header::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -10%;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+  border-radius: 50%;
+}
+.page-header h1 {
+  margin: 0 0 10px 0;
+  font-size: 42px;
+  font-weight: 700;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  position: relative;
+  z-index: 1;
+}
+.page-header .subtitle {
+  margin: 0;
+  font-size: 18px;
+  opacity: 0.95;
+  font-weight: 400;
+  position: relative;
+  z-index: 1;
+}
+.header-icon {
+  display: inline-block;
+  font-size: 48px;
+  margin-right: 15px;
+  vertical-align: middle;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.2));
+}
+.content-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  padding: 30px;
+  margin-bottom: 20px;
+}
+.toolbar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.nav-link{padding:10px 18px;border-radius:8px;text-decoration:none;color:white;background:rgba(255,255,255,0.2);font-weight:500;transition:all 0.2s ease;}
+.nav-link:hover{background:rgba(255,255,255,0.3);}
+.btn{padding:10px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:14px;transition:all 0.2s ease;display:inline-flex;align-items:center;gap:8px;text-decoration:none;}
+.btn:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,0.15);}
+.btn:active{transform:translateY(0);}
+.btn-primary{background:linear-gradient(135deg,#0d6efd 0%,#0a58ca 100%);color:white;}
+.btn-secondary{background:linear-gradient(135deg,#6c757d 0%,#5a6268 100%);color:white;}
+.btn-success{background:linear-gradient(135deg,#28a745 0%,#218838 100%);color:white;}
+.btn-danger{background:linear-gradient(135deg,#dc3545 0%,#c82333 100%);color:white;}
+.btn-info{background:linear-gradient(135deg,#17a2b8 0%,#138496 100%);color:white;}
 table{width:100%;margin-top:16px;border-collapse:collapse;background:#fff;border-radius:6px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.05)}
 th,td{padding:12px;border-bottom:1px solid #eef2f6;text-align:left;font-size:14px}
 th{background:#f8fafc;font-weight:700}
@@ -234,25 +497,52 @@ th{background:#f8fafc;font-weight:700}
 .zone-row .col-county{width:20%}
 .zone-row .col-statezone{width:14%}
 .zone-row .col-fips{width:14%}
+input[type="file"]{display:none;}
+.file-upload-label{display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:linear-gradient(135deg,#17a2b8 0%,#138496 100%);color:white;border-radius:8px;cursor:pointer;font-weight:600;font-size:14px;transition:all 0.2s ease;}
+.file-upload-label:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,0.15);}
 </style>
 
 <!-- removed early stub functions; wiring is done via event listeners later -->
 </head>
 <body>
-<header class="header">
-  <h1 style="margin:0">Users</h1>
-  <nav>
-    <a class="nav-link" href="/view_tables.php">View Tables</a>
-    <a class="nav-link primary" href="/users_table.php" style="margin-left:8px">Users</a>
-  </nav>
-</header>
-<button class="btn btn-primary" id="addUserBtn">Add User</button>
-<table id="usersTable" style="border:0">
-  <thead>
-    <tr><th>ID</th><th>Name</th><th>Email</th><th>Timezone</th><th>Zones</th><th>Actions</th></tr>
-  </thead>
-  <tbody></tbody>
-</table>
+<div class="page-container">
+  <div class="page-header">
+    <span class="header-icon">🌦️</span>
+    <div style="display:inline-block;vertical-align:middle">
+      <h1><span class="header-icon" style="display:inline;font-size:inherit;margin:0">⚡</span> Weather Alerts - User Management</h1>
+      <p class="subtitle">Manage users and configure weather alert notifications</p>
+    </div>
+  </div>
+
+  <div class="content-card">
+    <div class="toolbar">
+      <button class="btn btn-primary" id="addUserBtn">
+        <span>➕</span> Add User
+      </button>
+      <button class="btn btn-success" id="downloadUsersBtn">
+        <span>⬇️</span> Download Users
+      </button>
+      <label for="uploadUsersFile" class="file-upload-label">
+        <span>⬆️</span> Upload Users
+      </label>
+      <input type="file" id="uploadUsersFile" accept=".sqlite,.db" />
+    </div>
+    
+    <table id="usersTable">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Timezone</th>
+          <th>Zones</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
 
 <!-- ensure closeModal is defined as a true global function before any onclick runs -->
 <script>
@@ -1050,6 +1340,78 @@ document.addEventListener('DOMContentLoaded', () => {
   setTimeout(() => {
       try { if (typeof loadUsers === 'function') loadUsers(); } catch (err) { console.error('startup load error', err); }
   }, 100);
+
+  // Download users button handler
+  const downloadBtn = document.getElementById('downloadUsersBtn');
+  if (downloadBtn) {
+    downloadBtn.addEventListener('click', async () => {
+      try {
+        downloadBtn.disabled = true;
+        downloadBtn.textContent = 'Downloading...';
+        
+        const response = await fetch('/api/users/download', { credentials: 'include' });
+        if (!response.ok) {
+          const error = await response.json();
+          alert('Download failed: ' + (error.error || 'Unknown error'));
+          return;
+        }
+        
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'users_backup_' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '.sqlite';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        a.remove();
+      } catch (error) {
+        console.error('Download error:', error);
+        alert('Download failed: ' + error.message);
+      } finally {
+        downloadBtn.disabled = false;
+        downloadBtn.innerHTML = '<span>⬇️</span> Download Users';
+      }
+    });
+  }
+
+  // Upload users file handler
+  const uploadInput = document.getElementById('uploadUsersFile');
+  if (uploadInput) {
+    uploadInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      if (!confirm(`Are you sure you want to restore users from "${file.name}"? This will REPLACE all current users!`)) {
+        uploadInput.value = '';
+        return;
+      }
+
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const response = await fetch('/api/users/upload', {
+          method: 'POST',
+          credentials: 'include',
+          body: formData
+        });
+
+        const result = await response.json();
+        if (response.ok && result.success) {
+          alert(result.message || 'Users restored successfully!');
+          if (typeof loadUsers === 'function') loadUsers();
+        } else {
+          alert('Upload failed: ' + (result.error || 'Unknown error'));
+        }
+      } catch (error) {
+        console.error('Upload error:', error);
+        alert('Upload failed: ' + error.message);
+      } finally {
+        uploadInput.value = '';
+      }
+    });
+  }
 });
 </script>
 </body>
