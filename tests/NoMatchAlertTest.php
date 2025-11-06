@@ -25,7 +25,7 @@ use App\DB\Connection;
 class NoMatchAlertTest extends TestCase
 {
     /**
-     * @var \PDO Database connection
+     * @var PDO Database connection
      */
     private $pdo;
     
