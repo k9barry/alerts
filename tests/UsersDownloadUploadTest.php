@@ -31,12 +31,11 @@ class UsersDownloadUploadTest extends TestCase
     }
     
     /**
-     * Helper method to insert a user into the backup database
+     * Helper method to map user array to parameters for INSERT statement
      */
-    private function insertUserToBackup(PDO $backupDb, array $user): void
+    private function mapUserToParams(array $user): array
     {
-        $stmt = $backupDb->prepare("INSERT INTO users (idx, FirstName, LastName, Email, Timezone, PushoverUser, PushoverToken, NtfyUser, NtfyPassword, NtfyToken, NtfyTopic, ZoneAlert, CreatedAt, UpdatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->execute([
+        return [
             $user['idx'],
             $user['FirstName'],
             $user['LastName'],
@@ -51,7 +50,16 @@ class UsersDownloadUploadTest extends TestCase
             $user['ZoneAlert'] ?? '[]',
             $user['CreatedAt'] ?? null,
             $user['UpdatedAt'] ?? null
-        ]);
+        ];
+    }
+    
+    /**
+     * Helper method to insert a user into the backup database
+     */
+    private function insertUserToBackup(PDO $backupDb, array $user): void
+    {
+        $stmt = $backupDb->prepare("INSERT INTO users (idx, FirstName, LastName, Email, Timezone, PushoverUser, PushoverToken, NtfyUser, NtfyPassword, NtfyToken, NtfyTopic, ZoneAlert, CreatedAt, UpdatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute($this->mapUserToParams($user));
     }
     
     /**
@@ -60,22 +68,7 @@ class UsersDownloadUploadTest extends TestCase
     private function restoreUserFromBackup(array $user): void
     {
         $stmt = $this->pdo->prepare("INSERT INTO users (idx, FirstName, LastName, Email, Timezone, PushoverUser, PushoverToken, NtfyUser, NtfyPassword, NtfyToken, NtfyTopic, ZoneAlert, CreatedAt, UpdatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->execute([
-            $user['idx'],
-            $user['FirstName'],
-            $user['LastName'],
-            $user['Email'],
-            $user['Timezone'],
-            $user['PushoverUser'] ?? '',
-            $user['PushoverToken'] ?? '',
-            $user['NtfyUser'] ?? '',
-            $user['NtfyPassword'] ?? '',
-            $user['NtfyToken'] ?? '',
-            $user['NtfyTopic'] ?? '',
-            $user['ZoneAlert'] ?? '[]',
-            $user['CreatedAt'] ?? null,
-            $user['UpdatedAt'] ?? null
-        ]);
+        $stmt->execute($this->mapUserToParams($user));
     }
     
     public function testBackupAndRestoreUsers(): void

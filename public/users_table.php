@@ -14,11 +14,14 @@ if ($requestUri === '/api/users/download' && $method === 'GET') {
     header('Content-Type: application/octet-stream');
     header('Content-Disposition: attachment; filename="users_backup_' . date('Y-m-d_H-i-s') . '.sqlite"');
     
+    $tempDb = null;
     try {
         // Create temporary SQLite database with users data
+        // Set restrictive umask before creating temp file to avoid world-readable window
+        $oldUmask = umask(0077);
         $tempDb = tempnam(sys_get_temp_dir(), 'users_backup_');
-        // Secure the temporary file with restrictive permissions (owner read/write only)
-        chmod($tempDb, 0600);
+        umask($oldUmask);
+        
         $tempPdo = new PDO("sqlite:$tempDb");
         $tempPdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         
@@ -66,13 +69,17 @@ if ($requestUri === '/api/users/download' && $method === 'GET') {
         // Close connection and output file
         $tempPdo = null;
         readfile($tempDb);
-        unlink($tempDb);
         exit;
     } catch (Exception $e) {
         http_response_code(500);
         header('Content-Type: application/json');
         echo json_encode(['success' => false, 'error' => 'Failed to create backup: ' . $e->getMessage()]);
         exit;
+    } finally {
+        // Ensure temp file is cleaned up even if readfile() fails
+        if ($tempDb !== null && file_exists($tempDb)) {
+            @unlink($tempDb);
+        }
     }
 }
 
@@ -88,6 +95,36 @@ if ($requestUri === '/api/users/upload' && $method === 'POST') {
         }
         
         $uploadedFile = $_FILES['file']['tmp_name'];
+        
+        // Validate file size (not zero, not too large, e.g. max 10MB)
+        $maxFileSize = 10 * 1024 * 1024; // 10MB
+        $fileSize = filesize($uploadedFile);
+        if ($fileSize === false || $fileSize === 0) {
+            http_response_code(400);
+            echo json_encode(['success' => false, 'error' => 'Uploaded file is empty']);
+            exit;
+        }
+        if ($fileSize > $maxFileSize) {
+            http_response_code(400);
+            echo json_encode(['success' => false, 'error' => 'Uploaded file is too large (max 10MB)']);
+            exit;
+        }
+
+        // Validate SQLite magic header
+        $expectedHeader = "SQLite format 3\0";
+        $handle = fopen($uploadedFile, 'rb');
+        if ($handle === false) {
+            http_response_code(400);
+            echo json_encode(['success' => false, 'error' => 'Failed to open uploaded file']);
+            exit;
+        }
+        $header = fread($handle, 16);
+        fclose($handle);
+        if ($header !== $expectedHeader) {
+            http_response_code(400);
+            echo json_encode(['success' => false, 'error' => 'Uploaded file is not a valid SQLite database']);
+            exit;
+        }
         
         // Validate it's a SQLite database
         $uploadPdo = new PDO("sqlite:$uploadedFile");
@@ -123,11 +160,26 @@ if ($requestUri === '/api/users/upload' && $method === 'POST') {
             
             $count = 0;
             foreach ($uploadedUsers as $user) {
+                // Validate required fields
+                if (
+                    empty($user['FirstName']) ||
+                    empty($user['LastName']) ||
+                    empty($user['Email'])
+                ) {
+                    $pdo->rollBack();
+                    http_response_code(400);
+                    echo json_encode([
+                        'success' => false,
+                        'error' => 'Missing required user fields: FirstName, LastName, and Email must be non-empty'
+                    ]);
+                    exit;
+                }
+                
                 $stmt->execute([
                     $user['idx'] ?? null,
-                    $user['FirstName'] ?? '',
-                    $user['LastName'] ?? '',
-                    $user['Email'] ?? '',
+                    $user['FirstName'],
+                    $user['LastName'],
+                    $user['Email'],
                     $user['Timezone'] ?? 'America/New_York',
                     $user['PushoverUser'] ?? '',
                     $user['PushoverToken'] ?? '',
@@ -1382,7 +1434,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const file = e.target.files[0];
       if (!file) return;
 
-      if (!confirm(`Are you sure you want to restore users from "${file.name}"? This will REPLACE all current users!`)) {
+      if (!confirm('Are you sure you want to restore users from "' + file.name.replace(/"/g, '\\"') + '"? This will REPLACE all current users!')) {
         uploadInput.value = '';
         return;
       }
