@@ -30,6 +30,54 @@ class UsersDownloadUploadTest extends TestCase
         )");
     }
     
+    /**
+     * Helper method to insert a user into the backup database
+     */
+    private function insertUserToBackup(PDO $backupDb, array $user): void
+    {
+        $stmt = $backupDb->prepare("INSERT INTO users (idx, FirstName, LastName, Email, Timezone, PushoverUser, PushoverToken, NtfyUser, NtfyPassword, NtfyToken, NtfyTopic, ZoneAlert, CreatedAt, UpdatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute([
+            $user['idx'],
+            $user['FirstName'],
+            $user['LastName'],
+            $user['Email'],
+            $user['Timezone'],
+            $user['PushoverUser'] ?? '',
+            $user['PushoverToken'] ?? '',
+            $user['NtfyUser'] ?? '',
+            $user['NtfyPassword'] ?? '',
+            $user['NtfyToken'] ?? '',
+            $user['NtfyTopic'] ?? '',
+            $user['ZoneAlert'] ?? '[]',
+            $user['CreatedAt'] ?? null,
+            $user['UpdatedAt'] ?? null
+        ]);
+    }
+    
+    /**
+     * Helper method to restore a user from backup to main database
+     */
+    private function restoreUserFromBackup(array $user): void
+    {
+        $stmt = $this->pdo->prepare("INSERT INTO users (idx, FirstName, LastName, Email, Timezone, PushoverUser, PushoverToken, NtfyUser, NtfyPassword, NtfyToken, NtfyTopic, ZoneAlert, CreatedAt, UpdatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute([
+            $user['idx'],
+            $user['FirstName'],
+            $user['LastName'],
+            $user['Email'],
+            $user['Timezone'],
+            $user['PushoverUser'] ?? '',
+            $user['PushoverToken'] ?? '',
+            $user['NtfyUser'] ?? '',
+            $user['NtfyPassword'] ?? '',
+            $user['NtfyToken'] ?? '',
+            $user['NtfyTopic'] ?? '',
+            $user['ZoneAlert'] ?? '[]',
+            $user['CreatedAt'] ?? null,
+            $user['UpdatedAt'] ?? null
+        ]);
+    }
+    
     public function testBackupAndRestoreUsers(): void
     {
         // Insert test users
@@ -73,24 +121,8 @@ class UsersDownloadUploadTest extends TestCase
         )");
         
         // Copy users to backup
-        $stmt = $backupDb->prepare("INSERT INTO users (idx, FirstName, LastName, Email, Timezone, PushoverUser, PushoverToken, NtfyUser, NtfyPassword, NtfyToken, NtfyTopic, ZoneAlert, CreatedAt, UpdatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         foreach ($users as $user) {
-            $stmt->execute([
-                $user['idx'],
-                $user['FirstName'],
-                $user['LastName'],
-                $user['Email'],
-                $user['Timezone'],
-                $user['PushoverUser'] ?? '',
-                $user['PushoverToken'] ?? '',
-                $user['NtfyUser'] ?? '',
-                $user['NtfyPassword'] ?? '',
-                $user['NtfyToken'] ?? '',
-                $user['NtfyTopic'] ?? '',
-                $user['ZoneAlert'] ?? '[]',
-                $user['CreatedAt'] ?? null,
-                $user['UpdatedAt'] ?? null
-            ]);
+            $this->insertUserToBackup($backupDb, $user);
         }
         
         // Clear original users
@@ -100,25 +132,9 @@ class UsersDownloadUploadTest extends TestCase
         
         // Restore from backup
         $backupUsers = $backupDb->query("SELECT * FROM users")->fetchAll(PDO::FETCH_ASSOC);
-        $stmt = $this->pdo->prepare("INSERT INTO users (idx, FirstName, LastName, Email, Timezone, PushoverUser, PushoverToken, NtfyUser, NtfyPassword, NtfyToken, NtfyTopic, ZoneAlert, CreatedAt, UpdatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         
         foreach ($backupUsers as $user) {
-            $stmt->execute([
-                $user['idx'],
-                $user['FirstName'],
-                $user['LastName'],
-                $user['Email'],
-                $user['Timezone'],
-                $user['PushoverUser'] ?? '',
-                $user['PushoverToken'] ?? '',
-                $user['NtfyUser'] ?? '',
-                $user['NtfyPassword'] ?? '',
-                $user['NtfyToken'] ?? '',
-                $user['NtfyTopic'] ?? '',
-                $user['ZoneAlert'] ?? '[]',
-                $user['CreatedAt'] ?? null,
-                $user['UpdatedAt'] ?? null
-            ]);
+            $this->restoreUserFromBackup($user);
         }
         
         // Verify restoration
@@ -154,23 +170,7 @@ class UsersDownloadUploadTest extends TestCase
         // Simulate backup/restore
         $this->pdo->exec("DELETE FROM users");
         
-        $stmt = $this->pdo->prepare("INSERT INTO users (idx, FirstName, LastName, Email, Timezone, PushoverUser, PushoverToken, NtfyUser, NtfyPassword, NtfyToken, NtfyTopic, ZoneAlert, CreatedAt, UpdatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->execute([
-            $original['idx'],
-            $original['FirstName'],
-            $original['LastName'],
-            $original['Email'],
-            $original['Timezone'],
-            $original['PushoverUser'],
-            $original['PushoverToken'],
-            $original['NtfyUser'],
-            $original['NtfyPassword'],
-            $original['NtfyToken'],
-            $original['NtfyTopic'],
-            $original['ZoneAlert'],
-            $original['CreatedAt'],
-            $original['UpdatedAt']
-        ]);
+        $this->restoreUserFromBackup($original);
         
         $restored = $this->pdo->query("SELECT * FROM users")->fetch(PDO::FETCH_ASSOC);
         

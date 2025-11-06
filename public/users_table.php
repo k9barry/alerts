@@ -17,6 +17,8 @@ if ($requestUri === '/api/users/download' && $method === 'GET') {
     try {
         // Create temporary SQLite database with users data
         $tempDb = tempnam(sys_get_temp_dir(), 'users_backup_');
+        // Secure the temporary file with restrictive permissions (owner read/write only)
+        chmod($tempDb, 0600);
         $tempPdo = new PDO("sqlite:$tempDb");
         $tempPdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         
@@ -498,7 +500,6 @@ th{background:#f8fafc;font-weight:700}
 input[type="file"]{display:none;}
 .file-upload-label{display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:linear-gradient(135deg,#17a2b8 0%,#138496 100%);color:white;border-radius:8px;cursor:pointer;font-weight:600;font-size:14px;transition:all 0.2s ease;}
 .file-upload-label:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,0.15);}
-.btn-success{background:linear-gradient(135deg,#28a745 0%,#218838 100%);color:white;}
 </style>
 
 <!-- removed early stub functions; wiring is done via event listeners later -->
