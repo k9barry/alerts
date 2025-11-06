@@ -1437,7 +1437,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const file = e.target.files[0];
       if (!file) return;
 
-      if (!confirm('Are you sure you want to restore users from "' + file.name.replace(/"/g, '\\"') + '"? This will REPLACE all current users!')) {
+      if (!confirm('Are you sure you want to restore users from "' + file.name.replace(/"/g, "'") + '"? This will REPLACE all current users!')) {
         uploadInput.value = '';
         return;
       }
