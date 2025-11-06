@@ -118,8 +118,11 @@ if ($requestUri === '/api/users/upload' && $method === 'POST') {
             echo json_encode(['success' => false, 'error' => 'Failed to open uploaded file']);
             exit;
         }
-        $header = fread($handle, 16);
-        fclose($handle);
+        try {
+            $header = fread($handle, 16);
+        } finally {
+            fclose($handle);
+        }
         if ($header !== $expectedHeader) {
             http_response_code(400);
             echo json_encode(['success' => false, 'error' => 'Uploaded file is not a valid SQLite database']);
@@ -160,11 +163,11 @@ if ($requestUri === '/api/users/upload' && $method === 'POST') {
             
             $count = 0;
             foreach ($uploadedUsers as $user) {
-                // Validate required fields
+                // Validate required fields (check for non-empty strings after trimming)
                 if (
-                    empty($user['FirstName']) ||
-                    empty($user['LastName']) ||
-                    empty($user['Email'])
+                    !isset($user['FirstName']) || trim($user['FirstName']) === '' ||
+                    !isset($user['LastName']) || trim($user['LastName']) === '' ||
+                    !isset($user['Email']) || trim($user['Email']) === ''
                 ) {
                     $pdo->rollBack();
                     http_response_code(400);
