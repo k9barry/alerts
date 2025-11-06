@@ -11,9 +11,6 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 // API endpoint to download users table as SQLite database
 if ($requestUri === '/api/users/download' && $method === 'GET') {
-    header('Content-Type: application/octet-stream');
-    header('Content-Disposition: attachment; filename="users_backup_' . date('Y-m-d_H-i-s') . '.sqlite"');
-    
     $tempDb = null;
     try {
         // Create temporary SQLite database with users data
@@ -21,6 +18,14 @@ if ($requestUri === '/api/users/download' && $method === 'GET') {
         $oldUmask = umask(0077);
         $tempDb = tempnam(sys_get_temp_dir(), 'users_backup_');
         umask($oldUmask);
+        
+        // Validate temp file creation
+        if ($tempDb === false || !is_string($tempDb) || !is_writable(dirname($tempDb))) {
+            http_response_code(500);
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'error' => 'Failed to create temporary backup file']);
+            exit;
+        }
         
         $tempPdo = new PDO("sqlite:$tempDb");
         $tempPdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -68,12 +73,24 @@ if ($requestUri === '/api/users/download' && $method === 'GET') {
         
         // Close connection and output file
         $tempPdo = null;
+        
+        // Send headers only after file is ready
+        $size = filesize($tempDb);
+        header('Content-Type: application/octet-stream');
+        header('Content-Disposition: attachment; filename="users_backup_' . date('Y-m-d_H-i-s') . '.sqlite"');
+        if ($size !== false) {
+            header('Content-Length: ' . $size);
+        }
+        
         readfile($tempDb);
         exit;
     } catch (Exception $e) {
         http_response_code(500);
         header('Content-Type: application/json');
-        echo json_encode(['success' => false, 'error' => 'Failed to create backup: ' . $e->getMessage()]);
+        // Don't expose internal exception details
+        echo json_encode(['success' => false, 'error' => 'Failed to create backup']);
+        // Log the actual error internally for debugging
+        error_log('Backup creation failed: ' . $e->getMessage());
         exit;
     } finally {
         // Ensure temp file is cleaned up even if readfile() fails
@@ -95,6 +112,13 @@ if ($requestUri === '/api/users/upload' && $method === 'POST') {
         }
         
         $uploadedFile = $_FILES['file']['tmp_name'];
+        
+        // Validate uploaded file authenticity
+        if (!is_uploaded_file($uploadedFile) || !is_file($uploadedFile)) {
+            http_response_code(400);
+            echo json_encode(['success' => false, 'error' => 'Invalid upload source']);
+            exit;
+        }
         
         // Validate file size (not zero, not too large, e.g. max 10MB)
         $maxFileSize = 10 * 1024 * 1024; // 10MB
@@ -135,8 +159,10 @@ if ($requestUri === '/api/users/upload' && $method === 'POST') {
             exit;
         }
         
-        // Validate it's a SQLite database
-        $uploadPdo = new PDO("sqlite:$uploadedFile");
+        // Validate it's a SQLite database (open in read-only mode)
+        $uploadPdo = new PDO("sqlite:$uploadedFile", null, null, [
+            PDO::SQLITE_ATTR_OPEN_FLAGS => PDO::SQLITE_OPEN_READONLY
+        ]);
         $uploadPdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         
         // Check if users table exists
@@ -184,12 +210,35 @@ if ($requestUri === '/api/users/upload' && $method === 'POST') {
                     exit;
                 }
                 
+                // Validate email format
+                if (filter_var($user['Email'], FILTER_VALIDATE_EMAIL) === false) {
+                    $pdo->rollBack();
+                    http_response_code(400);
+                    echo json_encode([
+                        'success' => false,
+                        'error' => 'Invalid email format'
+                    ]);
+                    exit;
+                }
+                
+                // Validate timezone
+                $timezone = $user['Timezone'] ?? 'America/New_York';
+                if (!in_array($timezone, \DateTimeZone::listIdentifiers(), true)) {
+                    $pdo->rollBack();
+                    http_response_code(400);
+                    echo json_encode([
+                        'success' => false,
+                        'error' => 'Invalid timezone value'
+                    ]);
+                    exit;
+                }
+                
                 $stmt->execute([
                     $user['idx'] ?? null,
                     $user['FirstName'],
                     $user['LastName'],
                     $user['Email'],
-                    $user['Timezone'] ?? 'America/New_York',
+                    $timezone,
                     $user['PushoverUser'] ?? '',
                     $user['PushoverToken'] ?? '',
                     $user['NtfyUser'] ?? '',
