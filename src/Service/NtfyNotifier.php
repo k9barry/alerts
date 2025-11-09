@@ -73,27 +73,20 @@ class NtfyNotifier
     }
 
     $topic = trim((string)$this->topic);
-    if ($topic === '') {
-      LoggerFactory::get()->error('Ntfy send aborted: empty topic', [
-        'status' => 'error',
-        'attempts' => 0,
-        'error' => 'empty topic',
-      ]);
-      return ['status' => 'error', 'attempts' => 0, 'error' => 'empty topic'];
-    }
-
-    if (!self::isValidTopicName($topic)) {
-      $error = 'Invalid topic name: Topic names can only contain letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-)';
-      LoggerFactory::get()->error('Ntfy send aborted: invalid topic name', [
-        'topic' => $topic,
-        'status' => 'error',
-        'attempts' => 0,
-        'error' => $error,
-      ]);
-      return ['status' => 'error', 'attempts' => 0, 'error' => $error];
-    }
-
     $fullTitle = ltrim(($this->titlePrefix ?? '') . ' ' . $title);
+
+    // Construct and validate base URL and topic before retry loop
+    $base = rtrim((string)Config::$ntfyBaseUrl, '/');
+    if ($base === '') {
+      throw new RuntimeException('Empty ntfy base URL in Config');
+    }
+    $url = $base . '/' . rawurlencode($topic);
+    
+    // Create HTTP client once outside retry loop
+    $http = $this->httpClient ?? new HttpClient([
+      'timeout' => 15,
+      'http_errors' => false,
+    ]);
 
     // Retry logic similar to PushoverNotifier
     $attempts = 0;
@@ -103,16 +96,6 @@ class NtfyNotifier
     while ($attempts < 3 && !$ok) {
       $attempts++;
       try {
-        $base = rtrim((string)Config::$ntfyBaseUrl, '/');
-        if ($base === '') {
-          throw new RuntimeException('Empty ntfy base URL in Config');
-        }
-        $url = $base . '/' . rawurlencode($topic);
-        $http = $this->httpClient ?? new HttpClient([
-          'timeout' => 15,
-          'http_errors' => false,
-        ]);
-
         $headers = ['Content-Type' => 'text/plain; charset=utf-8'];
         if (!empty(Config::$ntfyToken)) {
           $headers['Authorization'] = 'Bearer ' . Config::$ntfyToken;
@@ -148,6 +131,11 @@ class NtfyNotifier
         $error = 'Guzzle exception: ' . $ge->getMessage();
       } catch (Throwable $e) {
         $error = 'Exception: ' . $e->getMessage();
+      }
+      
+      // Add a small delay before retrying, except after the last attempt
+      if (!$ok && $attempts < 3) {
+        usleep(500000); // 0.5 seconds
       }
     }
 
@@ -190,15 +178,20 @@ class NtfyNotifier
     }
 
     $topic = trim((string)$this->topic);
-    if ($topic === '') {
-      LoggerFactory::get()->error('Ntfy send aborted: empty topic', [
-        'user_idx' => $userIdx,
-        'status' => 'error',
-        'attempts' => 0,
-        'error' => 'empty topic',
-      ]);
-      return ['status' => 'error', 'attempts' => 0, 'error' => 'empty topic'];
+    $fullTitle = ltrim(($this->titlePrefix ?? '') . ' ' . $title);
+
+    // Validate and construct URL outside the retry loop
+    $base = rtrim((string)Config::$ntfyBaseUrl, '/');
+    if ($base === '') {
+      throw new \RuntimeException('Empty ntfy base URL in Config');
     }
+    $url = $base . '/' . rawurlencode($topic);
+    
+    // Create HTTP client once outside retry loop
+    $http = $this->httpClient ?? new HttpClient([
+      'timeout' => 15,
+      'http_errors' => false,
+    ]);
 
     // Retry logic similar to PushoverNotifier
     $attempts = 0;
@@ -208,16 +201,6 @@ class NtfyNotifier
     while ($attempts < 3 && !$ok) {
       $attempts++;
       try {
-        $base = rtrim((string)Config::$ntfyBaseUrl, '/');
-        if ($base === '') {
-          throw new \RuntimeException('Empty ntfy base URL in Config');
-        }
-        $url = $base . '/' . rawurlencode($topic);
-        $http = $this->httpClient ?? new HttpClient([
-          'timeout' => 15,
-          'http_errors' => false,
-        ]);
-
         $headers = ['Content-Type' => 'text/plain; charset=utf-8'];
         // prefer per-user token/user:password if provided
         if (!empty($userRow['NtfyToken'])) {
@@ -230,7 +213,6 @@ class NtfyNotifier
           $headers['Authorization'] = 'Basic ' . base64_encode(Config::$ntfyUser . ':' . Config::$ntfyPassword);
         }
 
-        $fullTitle = ltrim(($this->titlePrefix ?? '') . ' ' . $title);
         $headers['X-Title'] = substr($fullTitle, 0, 200);
         if (!empty($options['tags'])) {
           $headers['X-Tags'] = implode(',', (array)$options['tags']);
@@ -256,6 +238,11 @@ class NtfyNotifier
         $error = 'Guzzle exception: ' . $ge->getMessage();
       } catch (\Throwable $e) {
         $error = 'Exception: ' . $e->getMessage();
+      }
+      
+      // Add a small delay before retrying, except after the last attempt
+      if (!$ok && $attempts < 3) {
+        usleep(500000); // 0.5 seconds
       }
     }
 
@@ -320,6 +307,30 @@ class NtfyNotifier
       return ['status' => 'error', 'attempts' => 0, 'error' => $error];
     }
 
+    // Build full title with zone prefix and configured title prefix
+    $titleParts = [];
+    if (!empty($zoneTitlePrefix)) {
+      $titleParts[] = $zoneTitlePrefix;
+    }
+    if (!empty($this->titlePrefix)) {
+      $titleParts[] = $this->titlePrefix;
+    }
+    $titleParts[] = $title;
+    $fullTitle = implode(' - ', $titleParts);
+
+    // Validate and construct URL outside the retry loop
+    $base = rtrim((string)Config::$ntfyBaseUrl, '/');
+    if ($base === '') {
+      throw new \RuntimeException('Empty ntfy base URL in Config');
+    }
+    $url = $base . '/' . rawurlencode($topic);
+    
+    // Create HTTP client once outside retry loop
+    $http = $this->httpClient ?? new HttpClient([
+      'timeout' => 15,
+      'http_errors' => false,
+    ]);
+
     // Retry logic similar to PushoverNotifier
     $attempts = 0;
     $ok = false;
@@ -328,16 +339,6 @@ class NtfyNotifier
     while ($attempts < 3 && !$ok) {
       $attempts++;
       try {
-        $base = rtrim((string)Config::$ntfyBaseUrl, '/');
-        if ($base === '') {
-          throw new \RuntimeException('Empty ntfy base URL in Config');
-        }
-        $url = $base . '/' . rawurlencode($topic);
-        $http = $this->httpClient ?? new HttpClient([
-          'timeout' => 15,
-          'http_errors' => false,
-        ]);
-
         $headers = ['Content-Type' => 'text/plain; charset=utf-8'];
         // prefer per-user token/user:password if provided
         if (!empty($userRow['NtfyToken'])) {
@@ -350,17 +351,6 @@ class NtfyNotifier
           $headers['Authorization'] = 'Basic ' . base64_encode(Config::$ntfyUser . ':' . Config::$ntfyPassword);
         }
 
-        // Build full title with zone prefix and configured title prefix
-        $titleParts = [];
-        if (!empty($zoneTitlePrefix)) {
-          $titleParts[] = $zoneTitlePrefix;
-        }
-        if (!empty($this->titlePrefix)) {
-          $titleParts[] = $this->titlePrefix;
-        }
-        $titleParts[] = $title;
-        $fullTitle = implode(' - ', $titleParts);
-        
         $headers['X-Title'] = substr($fullTitle, 0, 200);
         if (!empty($options['tags'])) {
           $headers['X-Tags'] = implode(',', (array)$options['tags']);
@@ -386,6 +376,11 @@ class NtfyNotifier
         $error = 'Guzzle exception: ' . $ge->getMessage();
       } catch (\Throwable $e) {
         $error = 'Exception: ' . $e->getMessage();
+      }
+      
+      // Add a small delay before retrying, except after the last attempt
+      if (!$ok && $attempts < 3) {
+        usleep(500000); // 0.5 seconds
       }
     }
 
@@ -442,6 +437,19 @@ class NtfyNotifier
       return ['success' => false, 'error' => $error, 'request_id' => null];
     }
 
+    // Construct and validate base URL and ntfy URL outside the retry loop
+    $base = rtrim((string)Config::$ntfyBaseUrl, '/');
+    if ($base === '') {
+      throw new RuntimeException('Empty ntfy base URL in Config');
+    }
+    $ntfyUrl = $base . '/' . rawurlencode($topic);
+    
+    // Create HTTP client once outside retry loop
+    $http = $this->httpClient ?? new HttpClient([
+      'timeout' => 15,
+      'http_errors' => false,
+    ]);
+
     // Retry logic similar to PushoverNotifier
     $attempts = 0;
     $ok = false;
@@ -450,16 +458,6 @@ class NtfyNotifier
     while ($attempts < 3 && !$ok) {
       $attempts++;
       try {
-        $base = rtrim((string)Config::$ntfyBaseUrl, '/');
-        if ($base === '') {
-          throw new RuntimeException('Empty ntfy base URL in Config');
-        }
-        $ntfyUrl = $base . '/' . rawurlencode($topic);
-        $http = $this->httpClient ?? new HttpClient([
-          'timeout' => 15,
-          'http_errors' => false,
-        ]);
-
         $headers = ['Content-Type' => 'text/plain; charset=utf-8'];
         
         // Use provided credentials, or fall back to config
@@ -493,6 +491,11 @@ class NtfyNotifier
         $error = 'Guzzle exception: ' . $ge->getMessage();
       } catch (Throwable $e) {
         $error = 'Exception: ' . $e->getMessage();
+      }
+      
+      // Add a small delay before retrying, except after the last attempt
+      if (!$ok && $attempts < 3) {
+        usleep(500000); // 0.5 seconds
       }
     }
 

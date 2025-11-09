@@ -2,7 +2,6 @@
 
 use PHPUnit\Framework\TestCase;
 use App\Service\NtfyNotifier;
-use App\Logging\LoggerFactory;
 use Psr\Log\NullLogger;
 
 /**
