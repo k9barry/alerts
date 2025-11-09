@@ -86,27 +86,16 @@ class NtfyTopicValidationTest extends TestCase
 
     public function testNtfyNotifierSkipsInvalidTopic(): void
     {
-        // Test that send() method logs error and returns early for invalid topic
-        $logger = new class extends NullLogger {
-            public array $logs = [];
-            
-            public function error($message, array $context = []): void
-            {
-                $this->logs[] = ['level' => 'error', 'message' => $message, 'context' => $context];
-            }
-            
-            public function info($message, array $context = []): void
-            {
-                $this->logs[] = ['level' => 'info', 'message' => $message, 'context' => $context];
-            }
-        };
+        // Test that send() method returns skipped status for invalid topic
+        // Note: Audit logs are now written via LoggerFactory::get() instead of instance logger
+        $logger = new NullLogger();
         
         $notifier = new NtfyNotifier($logger, true, 'invalid topic!', null);
-        $notifier->send('Test', 'Test message');
+        $result = $notifier->send('Test', 'Test message');
         
-        // Should log that sending is skipped due to disabled/misconfigured status
-        $this->assertCount(1, $logger->logs);
-        $this->assertEquals('info', $logger->logs[0]['level']);
-        $this->assertStringContainsString('skipped', $logger->logs[0]['message']);
+        // Should return skipped status since notifier is disabled due to invalid topic
+        $this->assertEquals('skipped', $result['status']);
+        $this->assertEquals(0, $result['attempts']);
+        $this->assertStringContainsString('disabled or misconfigured', $result['error']);
     }
 }

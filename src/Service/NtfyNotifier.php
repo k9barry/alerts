@@ -3,6 +3,7 @@
 namespace App\Service;
 
 use App\Config;
+use App\Logging\LoggerFactory;
 use Psr\Log\LoggerInterface;
 use GuzzleHttp\Client as HttpClient;
 use GuzzleHttp\Exception\GuzzleException;
@@ -59,98 +60,98 @@ class NtfyNotifier
    * @param string $title Short title (max 200 chars)
    * @param string $message Message body (max 4096 chars)
    * @param array{tags?:string[],priority?:int,click?:string,attach?:string,delay?:string} $options Additional options mapped to ntfy headers
+   * @return array{status:string,attempts:int,error:string|null}
    */
-  public function send(string $title, string $message, array $options = []): void
+  public function send(string $title, string $message, array $options = []): array
   {
     if (!$this->isEnabled()) {
-      if ($this->logger) {
-        $this->logger->info('Ntfy sending skipped (disabled or misconfigured)');
-      }
-      return;
+      LoggerFactory::get()->info('Ntfy send skipped (disabled or misconfigured)', [
+        'status' => 'skipped',
+        'attempts' => 0,
+      ]);
+      return ['status' => 'skipped', 'attempts' => 0, 'error' => 'disabled or misconfigured'];
     }
 
     $topic = trim((string)$this->topic);
-    if ($topic === '') {
-      if ($this->logger) {
-        $this->logger->error('Ntfy sending aborted: empty topic');
-      }
-      return;
-    }
-
-    if (!self::isValidTopicName($topic)) {
-      if ($this->logger) {
-        $this->logger->error('Ntfy sending aborted: invalid topic name', [
-          'topic' => $topic,
-          'reason' => 'Topic names can only contain letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-)'
-        ]);
-      }
-      return;
-    }
-
-    if ($this->logger) {
-      $this->logger->info('Ntfy sending', [
-        'topic' => $topic,
-        'title' => $title,
-      ]);
-    }
-
     $fullTitle = ltrim(($this->titlePrefix ?? '') . ' ' . $title);
 
-    // Direct HTTP POST to ntfy topic endpoint via Guzzle
-    try {
-      $base = rtrim((string)Config::$ntfyBaseUrl, '/');
-      if ($base === '') {
-        throw new RuntimeException('Empty ntfy base URL in Config');
-      }
-      $url = $base . '/' . rawurlencode($topic);
-      $http = $this->httpClient ?? new HttpClient([
-        'timeout' => 15,
-        'http_errors' => false,
-      ]);
+    // Construct and validate base URL and topic before retry loop
+    $base = rtrim((string)Config::$ntfyBaseUrl, '/');
+    if ($base === '') {
+      throw new RuntimeException('Empty ntfy base URL in Config');
+    }
+    $url = $base . '/' . rawurlencode($topic);
+    
+    // Create HTTP client once outside retry loop
+    $http = $this->httpClient ?? new HttpClient([
+      'timeout' => 15,
+      'http_errors' => false,
+    ]);
 
-      $headers = ['Content-Type' => 'text/plain; charset=utf-8'];
-      if (!empty(Config::$ntfyToken)) {
-        $headers['Authorization'] = 'Bearer ' . Config::$ntfyToken;
-      } elseif (!empty(Config::$ntfyUser) && !empty(Config::$ntfyPassword)) {
-        $headers['Authorization'] = 'Basic ' . base64_encode(Config::$ntfyUser . ':' . Config::$ntfyPassword);
-      }
-
-      // Set metadata via headers per ntfy spec
-      $headers['X-Title'] = substr($fullTitle, 0, 200);
-      if (!empty($options['tags'])) {
-        $headers['X-Tags'] = implode(',', (array)$options['tags']);
-      }
-      if (isset($options['priority'])) {
-        $headers['X-Priority'] = (string)(int)$options['priority'];
-      }
-      if (!empty($options['click'])) {
-        $headers['X-Click'] = (string)$options['click'];
-      }
-
-      // Enforce ntfy length limits conservatively: message<=4096
-      $body = substr((string)$message, 0, 4096);
-
-      $resp = $http->post($url, ['headers' => $headers, 'body' => $body]);
-      $status = $resp->getStatusCode();
-      if ($status >= 200 && $status < 300) {
-        if ($this->logger) {
-          $this->logger->info('Ntfy notification sent (http)', ['topic' => $this->topic, 'status' => $status]);
+    // Retry logic similar to PushoverNotifier
+    $attempts = 0;
+    $ok = false;
+    $error = null;
+    
+    while ($attempts < 3 && !$ok) {
+      $attempts++;
+      try {
+        $headers = ['Content-Type' => 'text/plain; charset=utf-8'];
+        if (!empty(Config::$ntfyToken)) {
+          $headers['Authorization'] = 'Bearer ' . Config::$ntfyToken;
+        } elseif (!empty(Config::$ntfyUser) && !empty(Config::$ntfyPassword)) {
+          $headers['Authorization'] = 'Basic ' . base64_encode(Config::$ntfyUser . ':' . Config::$ntfyPassword);
         }
-        return;
+
+        // Set metadata via headers per ntfy spec
+        $headers['X-Title'] = substr($fullTitle, 0, 200);
+        if (!empty($options['tags'])) {
+          $headers['X-Tags'] = implode(',', (array)$options['tags']);
+        }
+        if (isset($options['priority'])) {
+          $headers['X-Priority'] = (string)(int)$options['priority'];
+        }
+        if (!empty($options['click'])) {
+          $headers['X-Click'] = (string)$options['click'];
+        }
+
+        // Enforce ntfy length limits conservatively: message<=4096
+        $body = substr((string)$message, 0, 4096);
+
+        $resp = $http->post($url, ['headers' => $headers, 'body' => $body]);
+        $status = $resp->getStatusCode();
+        if ($status >= 200 && $status < 300) {
+          $ok = true;
+          $error = null; // Clear error on success
+        } else {
+          $responseBody = (string)$resp->getBody();
+          $error = 'HTTP ' . $status . ': ' . $responseBody;
+        }
+      } catch (GuzzleException $ge) {
+        $error = 'Guzzle exception: ' . $ge->getMessage();
+      } catch (Throwable $e) {
+        $error = 'Exception: ' . $e->getMessage();
       }
-      $body = (string)$resp->getBody();
-      if ($this->logger) {
-        $this->logger->error('Ntfy HTTP send failed', ['status' => $status, 'body' => $body, 'url' => $url]);
-      }
-    } catch (GuzzleException $ge) {
-      if ($this->logger) {
-        $this->logger->error('Ntfy HTTP send failed (exception)', ['error' => $ge->getMessage()]);
-      }
-    } catch (Throwable $e) {
-      if ($this->logger) {
-        $this->logger->error('Ntfy HTTP send failed (throwable)', ['error' => $e->getMessage()]);
+      
+      // Add a small delay before retrying, except after the last attempt
+      if (!$ok && $attempts < 3) {
+        usleep(500000); // 0.5 seconds
       }
     }
+
+    $status = $ok ? 'success' : 'failure';
+    LoggerFactory::get()->info('Ntfy send result', [
+      'topic' => $topic,
+      'status' => $status,
+      'attempts' => $attempts,
+      'error' => $error,
+    ]);
+
+    return [
+      'status' => $status,
+      'attempts' => $attempts,
+      'error' => $error,
+    ];
   }
 
   /**
@@ -161,85 +162,104 @@ class NtfyNotifier
    * @param string $message
    * @param array $options
    * @param array|null $userRow
+   * @return array{status:string,attempts:int,error:string|null}
    */
-  public function sendForUser(string $title, string $message, array $options = [], ?array $userRow = null): void
+  public function sendForUser(string $title, string $message, array $options = [], ?array $userRow = null): array
   {
+    $userIdx = $userRow['idx'] ?? null;
+    
     if (!$this->isEnabled()) {
-      if ($this->logger) {
-        $this->logger->info('Ntfy sending skipped (disabled or misconfigured)');
-      }
-      return;
+      LoggerFactory::get()->info('Ntfy send skipped (disabled or misconfigured)', [
+        'user_idx' => $userIdx,
+        'status' => 'skipped',
+        'attempts' => 0,
+      ]);
+      return ['status' => 'skipped', 'attempts' => 0, 'error' => 'disabled or misconfigured'];
     }
 
     $topic = trim((string)$this->topic);
-    if ($topic === '') {
-      if ($this->logger) {
-        $this->logger->error('Ntfy sending aborted: empty topic');
-      }
-      return;
+    $fullTitle = ltrim(($this->titlePrefix ?? '') . ' ' . $title);
+
+    // Validate and construct URL outside the retry loop
+    $base = rtrim((string)Config::$ntfyBaseUrl, '/');
+    if ($base === '') {
+      throw new \RuntimeException('Empty ntfy base URL in Config');
     }
+    $url = $base . '/' . rawurlencode($topic);
+    
+    // Create HTTP client once outside retry loop
+    $http = $this->httpClient ?? new HttpClient([
+      'timeout' => 15,
+      'http_errors' => false,
+    ]);
 
-    if ($this->logger) {
-      $this->logger->info('Ntfy sending (per-user)', ['topic' => $topic, 'title' => $title]);
-    }
-
-    try {
-      $base = rtrim((string)Config::$ntfyBaseUrl, '/');
-      if ($base === '') {
-        throw new \RuntimeException('Empty ntfy base URL in Config');
-      }
-      $url = $base . '/' . rawurlencode($topic);
-      $http = $this->httpClient ?? new HttpClient([
-        'timeout' => 15,
-        'http_errors' => false,
-      ]);
-
-      $headers = ['Content-Type' => 'text/plain; charset=utf-8'];
-      // prefer per-user token/user:password if provided
-      if (!empty($userRow['NtfyToken'])) {
-        $headers['Authorization'] = 'Bearer ' . trim((string)$userRow['NtfyToken']);
-      } elseif (!empty($userRow['NtfyUser']) && !empty($userRow['NtfyPassword'])) {
-        $headers['Authorization'] = 'Basic ' . base64_encode(trim((string)$userRow['NtfyUser']) . ':' . trim((string)$userRow['NtfyPassword']));
-      } elseif (!empty(Config::$ntfyToken)) {
-        $headers['Authorization'] = 'Bearer ' . Config::$ntfyToken;
-      } elseif (!empty(Config::$ntfyUser) && !empty(Config::$ntfyPassword)) {
-        $headers['Authorization'] = 'Basic ' . base64_encode(Config::$ntfyUser . ':' . Config::$ntfyPassword);
-      }
-
-      $fullTitle = ltrim(($this->titlePrefix ?? '') . ' ' . $title);
-      $headers['X-Title'] = substr($fullTitle, 0, 200);
-      if (!empty($options['tags'])) {
-        $headers['X-Tags'] = implode(',', (array)$options['tags']);
-      }
-      if (isset($options['priority'])) {
-        $headers['X-Priority'] = (string)(int)$options['priority'];
-      }
-      if (!empty($options['click'])) {
-        $headers['X-Click'] = (string)$options['click'];
-      }
-
-      $body = substr((string)$message, 0, 4096);
-      $resp = $http->post($url, ['headers' => $headers, 'body' => $body]);
-      $status = $resp->getStatusCode();
-      if ($status >= 200 && $status < 300) {
-        if ($this->logger) {
-          $this->logger->info('Ntfy notification sent (user)', ['topic' => $topic, 'status' => $status, 'user_idx' => $userRow['idx'] ?? null]);
+    // Retry logic similar to PushoverNotifier
+    $attempts = 0;
+    $ok = false;
+    $error = null;
+    
+    while ($attempts < 3 && !$ok) {
+      $attempts++;
+      try {
+        $headers = ['Content-Type' => 'text/plain; charset=utf-8'];
+        // prefer per-user token/user:password if provided
+        if (!empty($userRow['NtfyToken'])) {
+          $headers['Authorization'] = 'Bearer ' . trim((string)$userRow['NtfyToken']);
+        } elseif (!empty($userRow['NtfyUser']) && !empty($userRow['NtfyPassword'])) {
+          $headers['Authorization'] = 'Basic ' . base64_encode(trim((string)$userRow['NtfyUser']) . ':' . trim((string)$userRow['NtfyPassword']));
+        } elseif (!empty(Config::$ntfyToken)) {
+          $headers['Authorization'] = 'Bearer ' . Config::$ntfyToken;
+        } elseif (!empty(Config::$ntfyUser) && !empty(Config::$ntfyPassword)) {
+          $headers['Authorization'] = 'Basic ' . base64_encode(Config::$ntfyUser . ':' . Config::$ntfyPassword);
         }
-        return;
+
+        $headers['X-Title'] = substr($fullTitle, 0, 200);
+        if (!empty($options['tags'])) {
+          $headers['X-Tags'] = implode(',', (array)$options['tags']);
+        }
+        if (isset($options['priority'])) {
+          $headers['X-Priority'] = (string)(int)$options['priority'];
+        }
+        if (!empty($options['click'])) {
+          $headers['X-Click'] = (string)$options['click'];
+        }
+
+        $body = substr((string)$message, 0, 4096);
+        $resp = $http->post($url, ['headers' => $headers, 'body' => $body]);
+        $status = $resp->getStatusCode();
+        if ($status >= 200 && $status < 300) {
+          $ok = true;
+          $error = null; // Clear error on success
+        } else {
+          $responseBody = (string)$resp->getBody();
+          $error = 'HTTP ' . $status . ': ' . $responseBody;
+        }
+      } catch (GuzzleException $ge) {
+        $error = 'Guzzle exception: ' . $ge->getMessage();
+      } catch (\Throwable $e) {
+        $error = 'Exception: ' . $e->getMessage();
       }
-      $body = (string)$resp->getBody();
-      if ($this->logger) {
-        $this->logger->error('Ntfy HTTP send failed (user)', ['status' => $status, 'body' => $body, 'url' => $url]);
-      }
-    } catch (GuzzleException $ge) {
-      if ($this->logger) {
-        $this->logger->error('Ntfy HTTP send failed (exception)', ['error' => $ge->getMessage(), 'user_idx' => $userRow['idx'] ?? null]);
-      }
-    } catch (\Throwable $e) {
-      if ($this->logger) {
-        $this->logger->error('Ntfy HTTP send failed (throwable)', ['error' => $e->getMessage(), 'user_idx' => $userRow['idx'] ?? null]);
+      
+      // Add a small delay before retrying, except after the last attempt
+      if (!$ok && $attempts < 3) {
+        usleep(500000); // 0.5 seconds
       }
     }
+
+    $status = $ok ? 'success' : 'failure';
+    LoggerFactory::get()->info('Ntfy send result (user)', [
+      'topic' => $topic,
+      'user_idx' => $userIdx,
+      'status' => $status,
+      'attempts' => $attempts,
+      'error' => $error,
+    ]);
+
+    return [
+      'status' => $status,
+      'attempts' => $attempts,
+      'error' => $error,
+    ];
   }
 
   /**
@@ -251,9 +271,12 @@ class NtfyNotifier
    * @param array $options
    * @param array|null $userRow
    * @param string $zoneTitlePrefix Zone name(s) to prefix the title with
+   * @return array{status:string,attempts:int,error:string|null}
    */
-  public function sendForUserWithTopic(string $title, string $message, array $options = [], ?array $userRow = null, string $zoneTitlePrefix = ''): void
+  public function sendForUserWithTopic(string $title, string $message, array $options = [], ?array $userRow = null, string $zoneTitlePrefix = ''): array
   {
+    $userIdx = $userRow['idx'] ?? null;
+    
     // Determine topic: use user's NtfyTopic if provided, otherwise fall back to configured topic
     $topic = '';
     if (!empty($userRow['NtfyTopic'])) {
@@ -263,94 +286,119 @@ class NtfyNotifier
     }
 
     if ($topic === '') {
-      if ($this->logger) {
-        $this->logger->error('Ntfy sending aborted: no topic available (neither user NtfyTopic nor config topic)');
-      }
-      return;
+      LoggerFactory::get()->error('Ntfy send aborted: no topic available', [
+        'user_idx' => $userIdx,
+        'status' => 'error',
+        'attempts' => 0,
+        'error' => 'no topic available (neither user NtfyTopic nor config topic)',
+      ]);
+      return ['status' => 'error', 'attempts' => 0, 'error' => 'no topic available'];
     }
 
     if (!self::isValidTopicName($topic)) {
-      if ($this->logger) {
-        $this->logger->error('Ntfy sending aborted: invalid topic name', [
-          'topic' => $topic,
-          'user_idx' => $userRow['idx'] ?? null,
-          'reason' => 'Topic names can only contain letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-)'
-        ]);
-      }
-      return;
-    }
-
-    if ($this->logger) {
-      $this->logger->info('Ntfy sending (per-user with topic)', ['topic' => $topic, 'title' => $title, 'zone_prefix' => $zoneTitlePrefix]);
-    }
-
-    try {
-      $base = rtrim((string)Config::$ntfyBaseUrl, '/');
-      if ($base === '') {
-        throw new \RuntimeException('Empty ntfy base URL in Config');
-      }
-      $url = $base . '/' . rawurlencode($topic);
-      $http = $this->httpClient ?? new HttpClient([
-        'timeout' => 15,
-        'http_errors' => false,
+      $error = 'Invalid topic name: Topic names can only contain letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-)';
+      LoggerFactory::get()->error('Ntfy send aborted: invalid topic name', [
+        'topic' => $topic,
+        'user_idx' => $userIdx,
+        'status' => 'error',
+        'attempts' => 0,
+        'error' => $error,
       ]);
+      return ['status' => 'error', 'attempts' => 0, 'error' => $error];
+    }
 
-      $headers = ['Content-Type' => 'text/plain; charset=utf-8'];
-      // prefer per-user token/user:password if provided
-      if (!empty($userRow['NtfyToken'])) {
-        $headers['Authorization'] = 'Bearer ' . trim((string)$userRow['NtfyToken']);
-      } elseif (!empty($userRow['NtfyUser']) && !empty($userRow['NtfyPassword'])) {
-        $headers['Authorization'] = 'Basic ' . base64_encode(trim((string)$userRow['NtfyUser']) . ':' . trim((string)$userRow['NtfyPassword']));
-      } elseif (!empty(Config::$ntfyToken)) {
-        $headers['Authorization'] = 'Bearer ' . Config::$ntfyToken;
-      } elseif (!empty(Config::$ntfyUser) && !empty(Config::$ntfyPassword)) {
-        $headers['Authorization'] = 'Basic ' . base64_encode(Config::$ntfyUser . ':' . Config::$ntfyPassword);
-      }
+    // Build full title with zone prefix and configured title prefix
+    $titleParts = [];
+    if (!empty($zoneTitlePrefix)) {
+      $titleParts[] = $zoneTitlePrefix;
+    }
+    if (!empty($this->titlePrefix)) {
+      $titleParts[] = $this->titlePrefix;
+    }
+    $titleParts[] = $title;
+    $fullTitle = implode(' - ', $titleParts);
 
-      // Build full title with zone prefix and configured title prefix
-      $titleParts = [];
-      if (!empty($zoneTitlePrefix)) {
-        $titleParts[] = $zoneTitlePrefix;
-      }
-      if (!empty($this->titlePrefix)) {
-        $titleParts[] = $this->titlePrefix;
-      }
-      $titleParts[] = $title;
-      $fullTitle = implode(' - ', $titleParts);
-      
-      $headers['X-Title'] = substr($fullTitle, 0, 200);
-      if (!empty($options['tags'])) {
-        $headers['X-Tags'] = implode(',', (array)$options['tags']);
-      }
-      if (isset($options['priority'])) {
-        $headers['X-Priority'] = (string)(int)$options['priority'];
-      }
-      if (!empty($options['click'])) {
-        $headers['X-Click'] = (string)$options['click'];
-      }
+    // Validate and construct URL outside the retry loop
+    $base = rtrim((string)Config::$ntfyBaseUrl, '/');
+    if ($base === '') {
+      throw new \RuntimeException('Empty ntfy base URL in Config');
+    }
+    $url = $base . '/' . rawurlencode($topic);
+    
+    // Create HTTP client once outside retry loop
+    $http = $this->httpClient ?? new HttpClient([
+      'timeout' => 15,
+      'http_errors' => false,
+    ]);
 
-      $body = substr((string)$message, 0, 4096);
-      $resp = $http->post($url, ['headers' => $headers, 'body' => $body]);
-      $status = $resp->getStatusCode();
-      if ($status >= 200 && $status < 300) {
-        if ($this->logger) {
-          $this->logger->info('Ntfy notification sent (user with topic)', ['topic' => $topic, 'status' => $status, 'user_idx' => $userRow['idx'] ?? null]);
+    // Retry logic similar to PushoverNotifier
+    $attempts = 0;
+    $ok = false;
+    $error = null;
+    
+    while ($attempts < 3 && !$ok) {
+      $attempts++;
+      try {
+        $headers = ['Content-Type' => 'text/plain; charset=utf-8'];
+        // prefer per-user token/user:password if provided
+        if (!empty($userRow['NtfyToken'])) {
+          $headers['Authorization'] = 'Bearer ' . trim((string)$userRow['NtfyToken']);
+        } elseif (!empty($userRow['NtfyUser']) && !empty($userRow['NtfyPassword'])) {
+          $headers['Authorization'] = 'Basic ' . base64_encode(trim((string)$userRow['NtfyUser']) . ':' . trim((string)$userRow['NtfyPassword']));
+        } elseif (!empty(Config::$ntfyToken)) {
+          $headers['Authorization'] = 'Bearer ' . Config::$ntfyToken;
+        } elseif (!empty(Config::$ntfyUser) && !empty(Config::$ntfyPassword)) {
+          $headers['Authorization'] = 'Basic ' . base64_encode(Config::$ntfyUser . ':' . Config::$ntfyPassword);
         }
-        return;
+
+        $headers['X-Title'] = substr($fullTitle, 0, 200);
+        if (!empty($options['tags'])) {
+          $headers['X-Tags'] = implode(',', (array)$options['tags']);
+        }
+        if (isset($options['priority'])) {
+          $headers['X-Priority'] = (string)(int)$options['priority'];
+        }
+        if (!empty($options['click'])) {
+          $headers['X-Click'] = (string)$options['click'];
+        }
+
+        $body = substr((string)$message, 0, 4096);
+        $resp = $http->post($url, ['headers' => $headers, 'body' => $body]);
+        $status = $resp->getStatusCode();
+        if ($status >= 200 && $status < 300) {
+          $ok = true;
+          $error = null; // Clear error on success
+        } else {
+          $responseBody = (string)$resp->getBody();
+          $error = 'HTTP ' . $status . ': ' . $responseBody;
+        }
+      } catch (GuzzleException $ge) {
+        $error = 'Guzzle exception: ' . $ge->getMessage();
+      } catch (\Throwable $e) {
+        $error = 'Exception: ' . $e->getMessage();
       }
-      $body = (string)$resp->getBody();
-      if ($this->logger) {
-        $this->logger->error('Ntfy HTTP send failed (user with topic)', ['status' => $status, 'body' => $body, 'url' => $url]);
-      }
-    } catch (GuzzleException $ge) {
-      if ($this->logger) {
-        $this->logger->error('Ntfy HTTP send failed (exception)', ['error' => $ge->getMessage(), 'user_idx' => $userRow['idx'] ?? null]);
-      }
-    } catch (\Throwable $e) {
-      if ($this->logger) {
-        $this->logger->error('Ntfy HTTP send failed (throwable)', ['error' => $e->getMessage(), 'user_idx' => $userRow['idx'] ?? null]);
+      
+      // Add a small delay before retrying, except after the last attempt
+      if (!$ok && $attempts < 3) {
+        usleep(500000); // 0.5 seconds
       }
     }
+
+    $status = $ok ? 'success' : 'failure';
+    LoggerFactory::get()->info('Ntfy send result (user with topic)', [
+      'topic' => $topic,
+      'user_idx' => $userIdx,
+      'zone_prefix' => $zoneTitlePrefix,
+      'status' => $status,
+      'attempts' => $attempts,
+      'error' => $error,
+    ]);
+
+    return [
+      'status' => $status,
+      'attempts' => $attempts,
+      'error' => $error,
+    ];
   }
 
   /**
@@ -370,72 +418,94 @@ class NtfyNotifier
   {
     $topic = trim($topic);
     if ($topic === '') {
+      LoggerFactory::get()->error('Ntfy sendAlert failed: empty topic', [
+        'status' => 'error',
+        'attempts' => 0,
+        'error' => 'Empty topic',
+      ]);
       return ['success' => false, 'error' => 'Empty topic', 'request_id' => null];
     }
 
     if (!self::isValidTopicName($topic)) {
-      return ['success' => false, 'error' => 'Invalid topic name: Topic names can only contain letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-)', 'request_id' => null];
-    }
-
-    try {
-      $base = rtrim((string)Config::$ntfyBaseUrl, '/');
-      if ($base === '') {
-        throw new RuntimeException('Empty ntfy base URL in Config');
-      }
-      $ntfyUrl = $base . '/' . rawurlencode($topic);
-      $http = $this->httpClient ?? new HttpClient([
-        'timeout' => 15,
-        'http_errors' => false,
+      $error = 'Invalid topic name: Topic names can only contain letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-)';
+      LoggerFactory::get()->error('Ntfy sendAlert failed: invalid topic', [
+        'topic' => $topic,
+        'status' => 'error',
+        'attempts' => 0,
+        'error' => $error,
       ]);
-
-      $headers = ['Content-Type' => 'text/plain; charset=utf-8'];
-      
-      // Use provided credentials, or fall back to config
-      if ($token) {
-        $headers['Authorization'] = 'Bearer ' . trim($token);
-      } elseif ($user && $password) {
-        $headers['Authorization'] = 'Basic ' . base64_encode(trim($user) . ':' . trim($password));
-      } elseif (!empty(Config::$ntfyToken)) {
-        $headers['Authorization'] = 'Bearer ' . Config::$ntfyToken;
-      } elseif (!empty(Config::$ntfyUser) && !empty(Config::$ntfyPassword)) {
-        $headers['Authorization'] = 'Basic ' . base64_encode(Config::$ntfyUser . ':' . Config::$ntfyPassword);
-      }
-
-      $headers['X-Title'] = substr($title, 0, 200);
-      if ($url && preg_match('#^https?://#i', $url)) {
-        $headers['X-Click'] = $url;
-      }
-
-      $body = substr($message, 0, 4096);
-      $resp = $http->post($ntfyUrl, ['headers' => $headers, 'body' => $body]);
-      $status = $resp->getStatusCode();
-      
-      if ($status >= 200 && $status < 300) {
-        if ($this->logger) {
-          $this->logger->info('Ntfy sendAlert success', ['topic' => $topic, 'status' => $status]);
-        }
-        return ['success' => true, 'error' => null, 'request_id' => null];
-      }
-      
-      $responseBody = (string)$resp->getBody();
-      $error = 'HTTP ' . $status . ': ' . $responseBody;
-      if ($this->logger) {
-        $this->logger->error('Ntfy sendAlert failed', ['status' => $status, 'body' => $responseBody]);
-      }
-      return ['success' => false, 'error' => $error, 'request_id' => null];
-      
-    } catch (GuzzleException $ge) {
-      $error = 'Guzzle exception: ' . $ge->getMessage();
-      if ($this->logger) {
-        $this->logger->error('Ntfy sendAlert exception', ['error' => $error]);
-      }
-      return ['success' => false, 'error' => $error, 'request_id' => null];
-    } catch (Throwable $e) {
-      $error = 'Exception: ' . $e->getMessage();
-      if ($this->logger) {
-        $this->logger->error('Ntfy sendAlert throwable', ['error' => $error]);
-      }
       return ['success' => false, 'error' => $error, 'request_id' => null];
     }
+
+    // Construct and validate base URL and ntfy URL outside the retry loop
+    $base = rtrim((string)Config::$ntfyBaseUrl, '/');
+    if ($base === '') {
+      throw new RuntimeException('Empty ntfy base URL in Config');
+    }
+    $ntfyUrl = $base . '/' . rawurlencode($topic);
+    
+    // Create HTTP client once outside retry loop
+    $http = $this->httpClient ?? new HttpClient([
+      'timeout' => 15,
+      'http_errors' => false,
+    ]);
+
+    // Retry logic similar to PushoverNotifier
+    $attempts = 0;
+    $ok = false;
+    $error = null;
+    
+    while ($attempts < 3 && !$ok) {
+      $attempts++;
+      try {
+        $headers = ['Content-Type' => 'text/plain; charset=utf-8'];
+        
+        // Use provided credentials, or fall back to config
+        if ($token) {
+          $headers['Authorization'] = 'Bearer ' . trim($token);
+        } elseif ($user && $password) {
+          $headers['Authorization'] = 'Basic ' . base64_encode(trim($user) . ':' . trim($password));
+        } elseif (!empty(Config::$ntfyToken)) {
+          $headers['Authorization'] = 'Bearer ' . Config::$ntfyToken;
+        } elseif (!empty(Config::$ntfyUser) && !empty(Config::$ntfyPassword)) {
+          $headers['Authorization'] = 'Basic ' . base64_encode(Config::$ntfyUser . ':' . Config::$ntfyPassword);
+        }
+
+        $headers['X-Title'] = substr($title, 0, 200);
+        if ($url && preg_match('#^https?://#i', $url)) {
+          $headers['X-Click'] = $url;
+        }
+
+        $body = substr($message, 0, 4096);
+        $resp = $http->post($ntfyUrl, ['headers' => $headers, 'body' => $body]);
+        $status = $resp->getStatusCode();
+        
+        if ($status >= 200 && $status < 300) {
+          $ok = true;
+          $error = null; // Clear error on success
+        } else {
+          $responseBody = (string)$resp->getBody();
+          $error = 'HTTP ' . $status . ': ' . $responseBody;
+        }
+      } catch (GuzzleException $ge) {
+        $error = 'Guzzle exception: ' . $ge->getMessage();
+      } catch (Throwable $e) {
+        $error = 'Exception: ' . $e->getMessage();
+      }
+      
+      // Add a small delay before retrying, except after the last attempt
+      if (!$ok && $attempts < 3) {
+        usleep(500000); // 0.5 seconds
+      }
+    }
+
+    LoggerFactory::get()->info('Ntfy sendAlert result', [
+      'topic' => $topic,
+      'success' => $ok,
+      'attempts' => $attempts,
+      'error' => $error,
+    ]);
+
+    return ['success' => $ok, 'error' => $error, 'request_id' => null];
   }
 }

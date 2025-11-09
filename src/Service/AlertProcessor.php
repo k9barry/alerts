@@ -131,8 +131,8 @@ final class AlertProcessor
               $zoneTitlePrefix = !empty($zoneNames) ? implode(', ', array_slice($zoneNames, 0, 3)) : '';
               
               // use per-user send which prefers user's NtfyToken/NtfyUser+Password and NtfyTopic
-              $this->ntfy->sendForUserWithTopic($title, $headline, ['priority' => 3, 'tags' => ['warning'], 'click' => $click], $u, $zoneTitlePrefix);
-              $channels[] = ['channel' => 'ntfy', 'result' => ['status' => 'sent']];
+              $ntfyRes = $this->ntfy->sendForUserWithTopic($title, $headline, ['priority' => 3, 'tags' => ['warning'], 'click' => $click], $u, $zoneTitlePrefix);
+              $channels[] = ['channel' => 'ntfy', 'result' => $ntfyRes];
             }
 
             // persist result per user
