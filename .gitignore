@@ -25,3 +25,6 @@ Thumbs.db
 
 # Data
 /data/
+
+# Test scripts
+test_*.php
