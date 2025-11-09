@@ -38,7 +38,7 @@ final class AlertProcessor
       $this->alerts = new AlertsRepository();
       $this->pushover = new PushoverNotifier();
 
-      if (Config::$ntfyEnabled && trim((string)Config::$ntfyTopic) !== '') {
+      if (Config::$ntfyEnabled) {
         $this->ntfy = new NtfyNotifier(
           LoggerFactory::get(),
           true,
@@ -86,16 +86,23 @@ final class AlertProcessor
           foreach (array_merge($same, $ugc) as $v) {
             if (is_null($v)) continue;
             if (is_int($v) || (is_string($v) && preg_match('/^[0-9]+$/', $v))) {
+              // Keep FIPS codes (numeric) as strings
               $alertIds[] = (string)$v;
             } elseif (is_string($v) && trim($v) !== '') {
-              $alertIds[] = strtolower(trim($v));
+              $v = trim($v);
+              // Convert STATE_ZONE format to uppercase for consistent matching with user zones
+              if (preg_match('/^[a-z]{2,3}c?\d+$/i', $v)) {
+                $alertIds[] = strtoupper($v);
+              } else {
+                $alertIds[] = $v; // Keep other formats as-is
+              }
             }
           }
           $alertIds = array_values(array_unique($alertIds));
 
           // Load all users (limit to 100 per your guidance) and match their ZoneAlert
           $db = \App\DB\Connection::get();
-          $stmt = $db->prepare('SELECT idx, FirstName, LastName, Email, Timezone, PushoverUser, PushoverToken, NtfyUser, NtfyPassword, NtfyToken, ZoneAlert FROM users ORDER BY idx DESC LIMIT 100');
+          $stmt = $db->prepare('SELECT idx, FirstName, LastName, Email, Timezone, PushoverUser, PushoverToken, NtfyUser, NtfyPassword, NtfyToken, NtfyTopic, ZoneAlert FROM users ORDER BY idx DESC LIMIT 100');
           $stmt->execute();
           $users = $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
 
@@ -125,7 +132,8 @@ final class AlertProcessor
               $channels[] = ['channel' => 'pushover', 'result' => $res];
               $pushoverReqId = $res['request_id'] ?? null;
             }
-            if ($this->ntfy && $this->ntfy->isEnabled()) {
+            // Send ntfy notification if ntfy is initialized and either global topic is valid OR user has a topic
+            if ($this->ntfy && ($this->ntfy->isEnabled() || !empty($u['NtfyTopic']))) {
               // Get zone names for title prefix
               $zoneNames = $this->getZoneNamesForAlert($alertIds);
               $zoneTitlePrefix = !empty($zoneNames) ? implode(', ', array_slice($zoneNames, 0, 3)) : '';
