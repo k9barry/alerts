@@ -9,6 +9,7 @@ use GuzzleHttp\Client as HttpClient;
 use GuzzleHttp\Exception\GuzzleException;
 use RuntimeException;
 use Throwable;
+use App\Service\MessageBuilderTrait;
 
 /**
  * Ntfy notifier - sends notifications to a ntfy server via HTTP POST
@@ -17,6 +18,7 @@ use Throwable;
  */
 class NtfyNotifier
 {
+  use MessageBuilderTrait;
   public function __construct(
     private readonly ?LoggerInterface $logger = null,
     private readonly ?bool            $enabled = null,
@@ -389,6 +391,145 @@ class NtfyNotifier
       'topic' => $topic,
       'user_idx' => $userIdx,
       'zone_prefix' => $zoneTitlePrefix,
+      'status' => $status,
+      'attempts' => $attempts,
+      'error' => $error,
+    ]);
+
+    return [
+      'status' => $status,
+      'attempts' => $attempts,
+      'error' => $error,
+    ];
+  }
+
+  /**
+   * Send a detailed Ntfy notification for a specific user record.
+   * Uses user's NtfyTopic, NtfyToken and NtfyUser/NtfyPassword when present.
+   * Builds title and message from alert properties using MessageBuilderTrait.
+   *
+   * @param array $alertRow Row from alerts table (expected keys: json, id, event, headline, etc.)
+   * @param array $userRow User row with optional NtfyTopic, NtfyToken, NtfyUser, NtfyPassword
+   * @return array{status:string,attempts:int,error:string|null}
+   */
+  public function notifyDetailedForUser(array $alertRow, array $userRow): array
+  {
+    $userIdx = $userRow['idx'] ?? null;
+    
+    // Determine topic: use user's NtfyTopic if provided, otherwise fall back to configured topic
+    $topic = '';
+    if (!empty($userRow['NtfyTopic'])) {
+      $topic = trim((string)$userRow['NtfyTopic']);
+    } else {
+      $topic = trim((string)$this->topic);
+    }
+
+    if ($topic === '') {
+      LoggerFactory::get()->info('Ntfy send skipped for user (no topic available)', [
+        'user_idx' => $userIdx,
+        'status' => 'skipped',
+        'attempts' => 0,
+      ]);
+      return ['status' => 'skipped', 'attempts' => 0, 'error' => 'no topic available'];
+    }
+
+    if (!self::isValidTopicName($topic)) {
+      $error = 'Invalid topic name: Topic names can only contain letters (A-Z, a-z), numbers (0-9), underscores (_), and hyphens (-)';
+      LoggerFactory::get()->error('Ntfy send aborted: invalid topic name', [
+        'topic' => $topic,
+        'user_idx' => $userIdx,
+        'status' => 'error',
+        'attempts' => 0,
+        'error' => $error,
+      ]);
+      return ['status' => 'error', 'attempts' => 0, 'error' => $error];
+    }
+
+    // Build title and message using trait methods (same as Pushover)
+    $props = json_decode($alertRow['json'] ?? '{}', true)['properties'] ?? [];
+    $title = $this->buildTitleFromProps($props, $alertRow);
+    $message = $this->buildMessageFromProps($props, $alertRow);
+
+    // Build full title with configured title prefix
+    $fullTitle = ltrim(($this->titlePrefix ?? '') . ' ' . $title);
+
+    // Validate and construct URL outside the retry loop
+    $base = rtrim((string)Config::$ntfyBaseUrl, '/');
+    if ($base === '') {
+      throw new \RuntimeException('Empty ntfy base URL in Config');
+    }
+    $url = $base . '/' . rawurlencode($topic);
+    
+    // Create HTTP client once outside retry loop
+    $http = $this->httpClient ?? new HttpClient([
+      'timeout' => 15,
+      'http_errors' => false,
+    ]);
+
+    // Add link to NWS alert page if id is a URL
+    $idUrl = $alertRow['id'] ?? null;
+    $click = null;
+    if (is_string($idUrl) && preg_match('#^https?://#i', $idUrl)) {
+      $click = $idUrl;
+    }
+
+    // Retry logic similar to PushoverNotifier
+    $attempts = 0;
+    $ok = false;
+    $error = null;
+    
+    while ($attempts < 3 && !$ok) {
+      $attempts++;
+      try {
+        $headers = ['Content-Type' => 'text/plain; charset=utf-8'];
+        // prefer per-user token/user:password if provided
+        if (!empty($userRow['NtfyToken'])) {
+          $headers['Authorization'] = 'Bearer ' . trim((string)$userRow['NtfyToken']);
+        } elseif (!empty($userRow['NtfyUser']) && !empty($userRow['NtfyPassword'])) {
+          $headers['Authorization'] = 'Basic ' . base64_encode(trim((string)$userRow['NtfyUser']) . ':' . trim((string)$userRow['NtfyPassword']));
+        } elseif (!empty(Config::$ntfyToken)) {
+          $headers['Authorization'] = 'Bearer ' . Config::$ntfyToken;
+        } elseif (!empty(Config::$ntfyUser) && !empty(Config::$ntfyPassword)) {
+          $headers['Authorization'] = 'Basic ' . base64_encode(Config::$ntfyUser . ':' . Config::$ntfyPassword);
+        }
+
+        // Set title and priority
+        $headers['X-Title'] = substr($fullTitle, 0, 200);
+        $headers['X-Priority'] = '3';
+        $headers['X-Tags'] = 'warning';
+        if ($click) {
+          $headers['X-Click'] = $click;
+        }
+
+        // Enforce ntfy length limits: message<=4096
+        $body = substr($message, 0, 4096);
+
+        $resp = $http->post($url, ['headers' => $headers, 'body' => $body]);
+        $status = $resp->getStatusCode();
+        if ($status >= 200 && $status < 300) {
+          $ok = true;
+          $error = null; // Clear error on success
+        } else {
+          $responseBody = (string)$resp->getBody();
+          $error = 'HTTP ' . $status . ': ' . $responseBody;
+        }
+      } catch (GuzzleException $ge) {
+        $error = 'Guzzle exception: ' . $ge->getMessage();
+      } catch (\Throwable $e) {
+        $error = 'Exception: ' . $e->getMessage();
+      }
+      
+      // Add a small delay before retrying, except after the last attempt
+      if (!$ok && $attempts < 3) {
+        usleep(500000); // 0.5 seconds
+      }
+    }
+
+    $status = $ok ? 'success' : 'failure';
+    LoggerFactory::get()->info('Ntfy send result (detailed user)', [
+      'topic' => $topic,
+      'user_idx' => $userIdx,
+      'alert_id' => $alertRow['id'] ?? null,
       'status' => $status,
       'attempts' => $attempts,
       'error' => $error,
