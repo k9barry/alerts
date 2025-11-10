@@ -106,15 +106,6 @@ final class AlertProcessor
           $stmt->execute();
           $users = $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
 
-          // Build notification title and headline for ntfy usage
-          $props = json_decode($p['json'] ?? '{}', true)['properties'] ?? [];
-          $event = (string)($props['event'] ?? ($p['event'] ?? 'Weather Alert'));
-          $title = substr($event, 0, 200);
-          $headline = (string)($props['headline'] ?? ($p['headline'] ?? ''));
-          $click = null;
-          $idUrl = $p['id'] ?? null;
-          if (is_string($idUrl) && preg_match('#^https?://#i', $idUrl)) $click = $idUrl;
-
           $anyMatch = false;
           foreach ($users as $u) {
             $userZoneIds = $this->parseUserZoneAlert($u['ZoneAlert'] ?? '[]');
@@ -134,12 +125,8 @@ final class AlertProcessor
             }
             // Send ntfy notification if ntfy is initialized and either global topic is valid OR user has a topic
             if ($this->ntfy && ($this->ntfy->isEnabled() || !empty($u['NtfyTopic']))) {
-              // Get zone names for title prefix
-              $zoneNames = $this->getZoneNamesForAlert($alertIds);
-              $zoneTitlePrefix = !empty($zoneNames) ? implode(', ', array_slice($zoneNames, 0, 3)) : '';
-              
               // use per-user send which prefers user's NtfyToken/NtfyUser+Password and NtfyTopic
-              $ntfyRes = $this->ntfy->sendForUserWithTopic($title, $headline, ['priority' => 3, 'tags' => ['warning'], 'click' => $click], $u, $zoneTitlePrefix);
+              $ntfyRes = $this->ntfy->notifyDetailedForUser($p, $u);
               $channels[] = ['channel' => 'ntfy', 'result' => $ntfyRes];
             }
 
@@ -162,32 +149,6 @@ final class AlertProcessor
         }
       }
     }
-
-  /**
-   * Get zone names for the given alert IDs to use as title prefix
-   * @param array $alertIds Array of UGC zone codes
-   * @return array Array of zone names
-   */
-  private function getZoneNamesForAlert(array $alertIds): array
-  {
-    if (empty($alertIds)) {
-      return [];
-    }
-
-    try {
-      $pdo = \App\DB\Connection::get();
-      $placeholders = str_repeat('?,', count($alertIds) - 1) . '?';
-      $stmt = $pdo->prepare("SELECT DISTINCT NAME FROM zones WHERE STATE_ZONE IN ($placeholders) OR ZONE IN ($placeholders)");
-      $stmt->execute(array_merge($alertIds, $alertIds));
-      return $stmt->fetchAll(\PDO::FETCH_COLUMN);
-    } catch (\Exception $e) {
-      LoggerFactory::get()->error('Failed to get zone names', [
-        'alertIds' => $alertIds,
-        'error' => $e->getMessage()
-      ]);
-      return [];
-    }
-  }
 
   /**
    * Parse user's ZoneAlert JSON string into array of zone identifiers.
