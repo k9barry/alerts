@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - CHANGELOG.md file to track project changes and version history
+- Added `declare(strict_types=1);` to all source files for better type safety
 - Code improvements and cleanup pass
 
 ### Fixed
@@ -16,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Improved code quality and documentation
+- Enhanced type safety across the codebase
 
 ## [0.1.0] - 2024
 
