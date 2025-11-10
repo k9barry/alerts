@@ -32,7 +32,6 @@ final class Config
   }
     
     /** @var string Application name */
-    /** @var string Application name */
     public static string $appName;
     /** @var string Application version */
     public static string $appVersion;
