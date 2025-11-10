@@ -7,6 +7,7 @@ Complete documentation for the Alerts weather notification system.
 - [Main README](../README.md) - Overview and quick start guide
 - [Installation Guide](../INSTALL.md) - Detailed setup instructions
 - [Development Guide](../README.DEV.md) - Local development setup
+- [Changelog](../CHANGELOG.md) - Version history and change log
 
 ## Overview Documentation
 

@@ -181,6 +181,10 @@ Or use the lightweight test runner:
 php scripts/run_unit_smoke.php
 ```
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a detailed list of changes and version history.
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) file for details.
