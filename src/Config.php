@@ -1,4 +1,7 @@
 <?php
+
+declare(strict_types=1);
+
 namespace App;
 
 /**
@@ -31,7 +34,6 @@ final class Config
     return $val !== false ? $val : $default;
   }
     
-    /** @var string Application name */
     /** @var string Application name */
     public static string $appName;
     /** @var string Application version */
