@@ -101,13 +101,71 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS zones (
   FE_AREA TEXT,
   LAT REAL,
   LON REAL,
-  UNIQUE(STATE, ZONE)
+  UNIQUE(STATE, ZONE, STATE_ZONE)
 )");
 
 // Create indexes for zones table
 $pdo->exec("CREATE INDEX IF NOT EXISTS idx_zones_state ON zones(STATE)");
 $pdo->exec("CREATE INDEX IF NOT EXISTS idx_zones_name ON zones(NAME)");
 $pdo->exec("CREATE INDEX IF NOT EXISTS idx_zones_state_zone ON zones(STATE_ZONE)");
+
+// Check if zones table needs UNIQUE constraint migration
+// SQLite doesn't allow modifying constraints, so we need to check if the table
+// has the old UNIQUE(STATE, ZONE) constraint without STATE_ZONE
+$tableInfo = $pdo->query("SELECT sql FROM sqlite_master WHERE type='table' AND name='zones'")->fetch(PDO::FETCH_ASSOC);
+$needsConstraintMigration = false;
+if ($tableInfo && isset($tableInfo['sql'])) {
+    $sql = $tableInfo['sql'];
+    // Check if it has UNIQUE(STATE, ZONE) but not UNIQUE(STATE, ZONE, STATE_ZONE)
+    if (preg_match('/UNIQUE\s*\(\s*STATE\s*,\s*ZONE\s*\)/i', $sql) && 
+        !preg_match('/UNIQUE\s*\(\s*STATE\s*,\s*ZONE\s*,\s*STATE_ZONE\s*\)/i', $sql)) {
+        $needsConstraintMigration = true;
+    }
+}
+
+if ($needsConstraintMigration) {
+    echo "Migrating zones table to new UNIQUE constraint...\n";
+    
+    $pdo->beginTransaction();
+    try {
+        // Create new table with updated constraint
+        $pdo->exec("CREATE TABLE zones_new (
+          idx INTEGER PRIMARY KEY AUTOINCREMENT,
+          STATE TEXT NOT NULL,
+          ZONE TEXT NOT NULL,
+          CWA TEXT,
+          NAME TEXT NOT NULL,
+          STATE_ZONE TEXT,
+          COUNTY TEXT,
+          FIPS TEXT,
+          TIME_ZONE TEXT,
+          FE_AREA TEXT,
+          LAT REAL,
+          LON REAL,
+          UNIQUE(STATE, ZONE, STATE_ZONE)
+        )");
+        
+        // Copy existing data
+        $pdo->exec("INSERT INTO zones_new SELECT * FROM zones");
+        
+        // Drop old table and rename new one
+        $pdo->exec("DROP TABLE zones");
+        $pdo->exec("ALTER TABLE zones_new RENAME TO zones");
+        
+        // Recreate indexes
+        $pdo->exec("CREATE INDEX IF NOT EXISTS idx_zones_state ON zones(STATE)");
+        $pdo->exec("CREATE INDEX IF NOT EXISTS idx_zones_name ON zones(NAME)");
+        $pdo->exec("CREATE INDEX IF NOT EXISTS idx_zones_state_zone ON zones(STATE_ZONE)");
+        
+        $pdo->commit();
+        echo "Zones table constraint migration completed\n";
+    } catch (Exception $e) {
+        $pdo->rollback();
+        echo "Error migrating zones table constraint: " . $e->getMessage() . "\n";
+        throw $e;
+    }
+}
+
 
 // Create users table
 $pdo->exec("CREATE TABLE IF NOT EXISTS users (
@@ -145,7 +203,21 @@ if (file_exists($zonesFile)) {
     $needsTransformation = $pdo->query("
         SELECT COUNT(*) FROM zones 
         WHERE LENGTH(STATE_ZONE) >= 3 
-        AND SUBSTR(STATE_ZONE, 3, 1) != 'C'
+        AND SUBSTR(STATE_ZONE, 3, 1) NOT IN ('C', 'Z')
+        LIMIT 1
+    ")->fetchColumn();
+    
+    // Check if we need to add Z variants for existing C records
+    $needsZVariants = $pdo->query("
+        SELECT COUNT(*) FROM zones z1
+        WHERE LENGTH(z1.STATE_ZONE) >= 3 
+        AND SUBSTR(z1.STATE_ZONE, 3, 1) = 'C'
+        AND NOT EXISTS (
+            SELECT 1 FROM zones z2 
+            WHERE z2.STATE = z1.STATE 
+            AND z2.ZONE = z1.ZONE 
+            AND SUBSTR(z2.STATE_ZONE, 3, 1) = 'Z'
+        )
         LIMIT 1
     ")->fetchColumn();
     
@@ -154,15 +226,51 @@ if (file_exists($zonesFile)) {
         
         $pdo->beginTransaction();
         try {
-            // Update STATE_ZONE: Add "C" as third character
+            // First, fetch all untransformed zones to duplicate with Z variant
+            $stmt = $pdo->query("
+                SELECT * FROM zones 
+                WHERE LENGTH(STATE_ZONE) >= 3 
+                AND SUBSTR(STATE_ZONE, 3, 1) NOT IN ('C', 'Z')
+            ");
+            $zonesToDuplicate = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Update STATE_ZONE: Add "C" as third character for existing records
             $stmt = $pdo->prepare("
                 UPDATE zones 
                 SET STATE_ZONE = SUBSTR(STATE_ZONE, 1, 2) || 'C' || SUBSTR(STATE_ZONE, 3)
                 WHERE LENGTH(STATE_ZONE) >= 3 
-                AND SUBSTR(STATE_ZONE, 3, 1) != 'C'
+                AND SUBSTR(STATE_ZONE, 3, 1) NOT IN ('C', 'Z')
             ");
             $stmt->execute();
             $stateZoneUpdates = $stmt->rowCount();
+            
+            // Insert Z variants for each zone that was just transformed
+            $insertStmt = $pdo->prepare(
+                "INSERT OR IGNORE INTO zones (STATE, ZONE, CWA, NAME, STATE_ZONE, COUNTY, FIPS, TIME_ZONE, FE_AREA, LAT, LON) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            );
+            $zVariantCount = 0;
+            foreach ($zonesToDuplicate as $zone) {
+                $stateZone = $zone['STATE_ZONE'] ?? '';
+                if (strlen($stateZone) >= 3) {
+                    // Create Z variant
+                    $stateZoneZ = substr($stateZone, 0, 2) . 'Z' . substr($stateZone, 2);
+                    $insertStmt->execute([
+                        $zone['STATE'],
+                        $zone['ZONE'],
+                        $zone['CWA'],
+                        $zone['NAME'],
+                        $stateZoneZ,
+                        $zone['COUNTY'],
+                        $zone['FIPS'],
+                        $zone['TIME_ZONE'],
+                        $zone['FE_AREA'],
+                        $zone['LAT'],
+                        $zone['LON']
+                    ]);
+                    $zVariantCount++;
+                }
+            }
             
             // Update FIPS: Add "0" as first character  
             $stmt = $pdo->prepare("
@@ -176,10 +284,66 @@ if (file_exists($zonesFile)) {
             $fipsUpdates = $stmt->rowCount();
             
             $pdo->commit();
-            echo "Applied transformations: {$stateZoneUpdates} STATE_ZONE, {$fipsUpdates} FIPS updates\n";
+            echo "Applied transformations: {$stateZoneUpdates} STATE_ZONE C-variants, {$zVariantCount} Z-variants added, {$fipsUpdates} FIPS updates\n";
         } catch (Exception $e) {
             $pdo->rollback();
             echo "Error applying transformations: " . $e->getMessage() . "\n";
+        }
+    }
+    
+    // Add Z variants for existing C records if they don't exist
+    if ($needsZVariants > 0) {
+        echo "Adding Z variants for existing C records...\n";
+        
+        $pdo->beginTransaction();
+        try {
+            // Fetch all C-variant zones that don't have corresponding Z variants
+            $stmt = $pdo->query("
+                SELECT z1.* FROM zones z1
+                WHERE LENGTH(z1.STATE_ZONE) >= 3 
+                AND SUBSTR(z1.STATE_ZONE, 3, 1) = 'C'
+                AND NOT EXISTS (
+                    SELECT 1 FROM zones z2 
+                    WHERE z2.STATE = z1.STATE 
+                    AND z2.ZONE = z1.ZONE 
+                    AND SUBSTR(z2.STATE_ZONE, 3, 1) = 'Z'
+                )
+            ");
+            $cVariantZones = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Insert Z variant for each C variant
+            $insertStmt = $pdo->prepare(
+                "INSERT OR IGNORE INTO zones (STATE, ZONE, CWA, NAME, STATE_ZONE, COUNTY, FIPS, TIME_ZONE, FE_AREA, LAT, LON) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            );
+            $zVariantCount = 0;
+            foreach ($cVariantZones as $zone) {
+                $stateZone = $zone['STATE_ZONE'] ?? '';
+                if (strlen($stateZone) >= 3 && substr($stateZone, 2, 1) === 'C') {
+                    // Replace C with Z to create Z variant
+                    $stateZoneZ = substr($stateZone, 0, 2) . 'Z' . substr($stateZone, 3);
+                    $insertStmt->execute([
+                        $zone['STATE'],
+                        $zone['ZONE'],
+                        $zone['CWA'],
+                        $zone['NAME'],
+                        $stateZoneZ,
+                        $zone['COUNTY'],
+                        $zone['FIPS'],
+                        $zone['TIME_ZONE'],
+                        $zone['FE_AREA'],
+                        $zone['LAT'],
+                        $zone['LON']
+                    ]);
+                    $zVariantCount++;
+                }
+            }
+            
+            $pdo->commit();
+            echo "Added {$zVariantCount} Z-variants for existing C records\n";
+        } catch (Exception $e) {
+            $pdo->rollback();
+            echo "Error adding Z variants: " . $e->getMessage() . "\n";
         }
     }
     
@@ -201,9 +365,15 @@ if (file_exists($zonesFile)) {
                 $stateZone = $fields[4] ?? '';
                 $fips = $fields[6] ?? '';
                 
-                // 1. Add "C" as the third character in STATE_ZONE (e.g., NM201 becomes NMC201)
+                // 1. Create both "C" and "Z" variants of STATE_ZONE
+                //    Original: NM201 becomes both NMC201 (C variant) and NMZ201 (Z variant)
+                $stateZoneVariants = [];
                 if (strlen($stateZone) >= 3) {
-                    $stateZone = substr($stateZone, 0, 2) . 'C' . substr($stateZone, 2);
+                    $stateZoneVariants[] = substr($stateZone, 0, 2) . 'C' . substr($stateZone, 2); // C variant
+                    $stateZoneVariants[] = substr($stateZone, 0, 2) . 'Z' . substr($stateZone, 2); // Z variant
+                } else {
+                    // If STATE_ZONE is too short, keep as-is
+                    $stateZoneVariants[] = $stateZone;
                 }
                 
                 // 2. Add "0" as the first character in FIPS (e.g., 35045 becomes 035045)
@@ -211,24 +381,28 @@ if (file_exists($zonesFile)) {
                     $fips = '0' . $fips;
                 }
                 
+                // 3. Insert a record for each STATE_ZONE variant (C and Z)
                 $stmt = $pdo->prepare(
                     "INSERT OR IGNORE INTO zones (STATE, ZONE, CWA, NAME, STATE_ZONE, COUNTY, FIPS, TIME_ZONE, FE_AREA, LAT, LON) 
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 );
-                $stmt->execute([
-                    $fields[0] ?? '', // STATE
-                    $fields[1] ?? '', // ZONE
-                    $fields[2] ?? '', // CWA
-                    $fields[3] ?? '', // NAME
-                    $stateZone,       // STATE_ZONE (modified)
-                    $fields[5] ?? '', // COUNTY
-                    $fips,           // FIPS (modified)
-                    $fields[7] ?? '', // TIME_ZONE
-                    $fields[8] ?? '', // FE_AREA
-                    !empty($fields[9]) ? (float)$fields[9] : null, // LAT
-                    !empty($fields[10]) ? (float)$fields[10] : null  // LON
-                ]);
-                $loaded++;
+                
+                foreach ($stateZoneVariants as $stateZoneVariant) {
+                    $stmt->execute([
+                        $fields[0] ?? '', // STATE
+                        $fields[1] ?? '', // ZONE
+                        $fields[2] ?? '', // CWA
+                        $fields[3] ?? '', // NAME
+                        $stateZoneVariant, // STATE_ZONE (C or Z variant)
+                        $fields[5] ?? '', // COUNTY
+                        $fips,           // FIPS (modified, same for both variants)
+                        $fields[7] ?? '', // TIME_ZONE
+                        $fields[8] ?? '', // FE_AREA
+                        !empty($fields[9]) ? (float)$fields[9] : null, // LAT
+                        !empty($fields[10]) ? (float)$fields[10] : null  // LON
+                    ]);
+                    $loaded++;
+                }
             }
         }
         echo "Loaded {$loaded} zone records.\n";
