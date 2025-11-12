@@ -1151,16 +1151,24 @@ function renderZones(stateFilter=''){
     const county = (z.raw && (z.raw.COUNTY || z.raw.County || '')) || '';
     const stateZone = (z.raw && (z.raw.STATE_ZONE || z.raw.STATEZONE || z.raw.STATE_ZONE_ID || z.STATE_ZONE || z.ZONE)) || '';
     const fips = (z.raw && (z.raw.FIPS || z.raw.fips || z.FIPS || '')) || '';
+    
+    // Helper to check if a STATE_ZONE value (possibly comma-separated) matches a selection
+    const stateZoneMatches = (szValue, selection) => {
+      if (!szValue) return false;
+      const szParts = String(szValue).split(',').map(s => s.trim().toLowerCase());
+      return szParts.some(part => part === String(selection).toLowerCase());
+    };
+    
     // Prefer live currentSelections (user changes in the modal). If empty and not explicitly cleared,
     // fall back to stored selections loaded from the user record.
     // Also check numeric ID and FIPS for stored selections that might not have been mapped yet
     const isInCurrent = (currentSelections.size > 0) && 
-      ((stateZone && Array.from(currentSelections).some(sel => sel.toLowerCase() === String(stateZone).toLowerCase())) || 
+      ((stateZone && Array.from(currentSelections).some(sel => stateZoneMatches(stateZone, sel))) || 
        Array.from(currentSelections).some(sel => sel.toLowerCase() === String(code).toLowerCase()) || 
        currentSelections.has(String(id)) || 
        currentSelections.has(String(fips)));
     const isInStored = (currentSelections.size === 0 && !selectionsExplicitlyCleared) && 
-      ((stateZone && storedSelections.some(stored => stored.toLowerCase() === String(stateZone).toLowerCase())) || 
+      ((stateZone && storedSelections.some(stored => stateZoneMatches(stateZone, stored))) || 
        storedSelections.some(stored => stored.toLowerCase() === String(code).toLowerCase()) || 
        storedSelections.includes(String(id)) || 
        storedSelections.includes(String(fips)));
@@ -1198,10 +1206,18 @@ function zoneCheckboxHandler(ev){
     const statezone = (cb.dataset.statezone || '').toString();
     const ugc = (cb.dataset.ugc || '').toString();
     if (cb.checked) {
-      if (statezone) currentSelections.add(String(statezone));
+      // Handle comma-separated STATE_ZONE values (e.g., "INC040,INZ040")
+      if (statezone) {
+        const stateZoneParts = statezone.split(',').map(s => s.trim()).filter(s => s);
+        stateZoneParts.forEach(part => currentSelections.add(String(part)));
+      }
       if (ugc) currentSelections.add(String(ugc));
     } else {
-      if (statezone) currentSelections.delete(String(statezone));
+      // Remove all parts of comma-separated STATE_ZONE values
+      if (statezone) {
+        const stateZoneParts = statezone.split(',').map(s => s.trim()).filter(s => s);
+        stateZoneParts.forEach(part => currentSelections.delete(String(part)));
+      }
       if (ugc) currentSelections.delete(String(ugc));
     }
     // Reset the flag since user is manually making selections
