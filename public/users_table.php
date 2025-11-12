@@ -1153,10 +1153,13 @@ function renderZones(stateFilter=''){
     const fips = (z.raw && (z.raw.FIPS || z.raw.fips || z.FIPS || '')) || '';
     
     // Helper to check if a STATE_ZONE value (possibly comma-separated) matches a selection
+    // Both szValue and selection can be comma-separated strings
     const stateZoneMatches = (szValue, selection) => {
-      if (!szValue) return false;
+      if (!szValue || !selection) return false;
       const szParts = String(szValue).split(',').map(s => s.trim().toLowerCase());
-      return szParts.some(part => part === String(selection).toLowerCase());
+      const selParts = String(selection).split(',').map(s => s.trim().toLowerCase());
+      // Check if there's any overlap between the two sets of parts
+      return szParts.some(szPart => selParts.some(selPart => szPart === selPart));
     };
     
     // Prefer live currentSelections (user changes in the modal). If empty and not explicitly cleared,
