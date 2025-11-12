@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHANGELOG.md file to track project changes and version history
 - Added `declare(strict_types=1);` to all source files for better type safety
 - Code improvements and cleanup pass
+- **Zone C/Z variant duplication**: Each weather zone now stored with both "C" (county) and "Z" (forecast zone) STATE_ZONE formats
+  - Enables matching alerts that reference either format (e.g., `INC040` or `INZ040`)
+  - Both variants share identical STATE, ZONE, FIPS, and all other fields
+  - Automatic migration of existing databases to new schema
+  - Z-variant creation for existing C-only records
 
 ### Fixed
 - Removed duplicate comment in Config.php
@@ -18,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Improved code quality and documentation
 - Enhanced type safety across the codebase
+- **Updated zones table UNIQUE constraint** from `(STATE, ZONE)` to `(STATE, ZONE, STATE_ZONE)` to allow both C and Z variants
+- **Migration script enhancements** (`scripts/migrate.php`):
+  - Automatic detection and migration of old database schema
+  - Transaction-based data transformations for safety
+  - Improved SQL query syntax using `NOT IN` for cleaner code
 
 ## [0.1.0] - 2024
 

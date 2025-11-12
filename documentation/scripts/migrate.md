@@ -69,11 +69,78 @@ For existing tables, adds missing columns:
 
 This allows migrations to be run multiple times safely (idempotent).
 
-### 6. Validation
+### 6. Zones Table and Data
+
+Creates the `zones` table for NWS weather zone data:
+```sql
+CREATE TABLE IF NOT EXISTS zones (
+  idx INTEGER PRIMARY KEY AUTOINCREMENT,
+  STATE TEXT NOT NULL,
+  ZONE TEXT NOT NULL,
+  CWA TEXT,
+  NAME TEXT NOT NULL,
+  STATE_ZONE TEXT,
+  COUNTY TEXT,
+  FIPS TEXT,
+  TIME_ZONE TEXT,
+  FE_AREA TEXT,
+  LAT REAL,
+  LON REAL,
+  UNIQUE(STATE, ZONE, STATE_ZONE)
+);
+```
+
+**Zone Duplication for C/Z Variants**:
+- Each zone is stored twice with different STATE_ZONE formats
+- "C" variant for county zones (e.g., `INC040`)
+- "Z" variant for forecast zones (e.g., `INZ040`)
+- Both variants share the same STATE, ZONE, FIPS, and other fields
+- Enables matching alerts that reference either format
+
+**Constraint Migration**:
+- Detects databases with old `UNIQUE(STATE, ZONE)` constraint
+- Automatically migrates to `UNIQUE(STATE, ZONE, STATE_ZONE)`
+- Preserves all existing data during migration
+
+**Existing Data Transformation**:
+- For untransformed zones (no C or Z): Adds C variant, creates Z duplicate
+- For C-only zones: Creates corresponding Z variant
+- All transformations use database transactions for safety
+
+**Zone Data Loading**:
+- If zones file exists and table is empty, loads zone data automatically
+- Applies STATE_ZONE transformations during import:
+  - Inserts "C" as 3rd character (e.g., `NM201` → `NMC201`)
+  - Inserts "Z" as 3rd character (e.g., `NM201` → `NMZ201`)
+- Prepends "0" to FIPS codes (e.g., `35045` → `035045`)
+
+### 7. Users Table
+
+Creates the `users` table for user profiles and notification settings:
+```sql
+CREATE TABLE IF NOT EXISTS users (
+  idx INTEGER PRIMARY KEY AUTOINCREMENT,
+  FirstName TEXT NOT NULL,
+  LastName TEXT NOT NULL,
+  Email TEXT NOT NULL UNIQUE,
+  Timezone TEXT DEFAULT 'America/New_York',
+  PushoverUser TEXT,
+  PushoverToken TEXT,
+  NtfyUser TEXT,
+  NtfyPassword TEXT,
+  NtfyToken TEXT,
+  NtfyTopic TEXT,
+  ZoneAlert TEXT DEFAULT '[]',
+  CreatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  UpdatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### 8. Validation
 
 After creation:
 - Lists all tables in database
-- Compares against expected tables: `active_alerts`, `incoming_alerts`, `pending_alerts`, `sent_alerts`
+- Compares against expected tables: `active_alerts`, `incoming_alerts`, `pending_alerts`, `sent_alerts`, `users`, `zones`
 - Reports missing or unexpected tables
 
 ## Output
