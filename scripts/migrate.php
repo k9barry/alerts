@@ -203,8 +203,7 @@ if (file_exists($zonesFile)) {
     $needsTransformation = $pdo->query("
         SELECT COUNT(*) FROM zones 
         WHERE LENGTH(STATE_ZONE) >= 3 
-        AND SUBSTR(STATE_ZONE, 3, 1) != 'C'
-        AND SUBSTR(STATE_ZONE, 3, 1) != 'Z'
+        AND SUBSTR(STATE_ZONE, 3, 1) NOT IN ('C', 'Z')
         LIMIT 1
     ")->fetchColumn();
     
