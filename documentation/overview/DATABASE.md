@@ -223,19 +223,19 @@ WHERE DATE(notified_at) = DATE('now');
 **Columns**:
 - **idx** (INTEGER PRIMARY KEY AUTOINCREMENT): Auto-incrementing unique identifier
 - **STATE** (TEXT NOT NULL): Two-letter state code (e.g., "IN", "CA")
-- **ZONE** (TEXT NOT NULL): Zone code (e.g., "Z001", "C001")
+- **ZONE** (TEXT NOT NULL): Zone code (e.g., "001", "040")
 - **CWA** (TEXT): County Warning Area
 - **NAME** (TEXT NOT NULL): Zone name (e.g., "Posey County")
-- **STATE_ZONE** (TEXT): Combined state and zone code (e.g., "INC001")
+- **STATE_ZONE** (TEXT): Combined state and zone codes with both C and Z variants as comma-separated values (e.g., "INC040,INZ040"). The C variant represents county zones and the Z variant represents forecast zones. Storing both allows matching alerts that use either format.
 - **COUNTY** (TEXT): County name
-- **FIPS** (TEXT): 6-digit FIPS code
+- **FIPS** (TEXT): 6-digit FIPS code (leading zero prepended during import)
 - **TIME_ZONE** (TEXT): IANA timezone (e.g., "America/Indiana/Indianapolis")
 - **FE_AREA** (TEXT): Forecast area code
 - **LAT** (REAL): Latitude
 - **LON** (REAL): Longitude
 
 **Constraints**:
-- `UNIQUE(STATE, ZONE)`: Prevents duplicate state/zone combinations
+- `UNIQUE(STATE, ZONE)`: Ensures one record per county with both C and Z variants in STATE_ZONE
 
 **Indexes**:
 - `idx_zones_state`: Index on STATE column
@@ -244,9 +244,10 @@ WHERE DATE(notified_at) = DATE('now');
 
 **Characteristics**:
 - Loaded from NWS zones data file (bp18mr25.dbx) during migration
-- Contains ~3,500 zones covering all US states and territories
-- Used to filter alerts by geographic area
-- Updated infrequently (when NWS updates zone definitions)
+- Each county has a single record with both INC040 and INZ040 variants stored in STATE_ZONE
+- Contains ~1,750 zones (one per county) covering all US states and territories
+- Used to populate zone selection UI and for geographic filtering
+- Migration logic automatically consolidates duplicate records from old format
 
 **Queries**:
 ```sql
@@ -256,8 +257,8 @@ SELECT * FROM zones WHERE STATE = 'IN';
 -- Search zones by name
 SELECT * FROM zones WHERE NAME LIKE '%Marion%';
 
--- Get zone by STATE_ZONE code
-SELECT * FROM zones WHERE STATE_ZONE = 'INC097';
+-- Get zone by STATE_ZONE code (matches either C or Z variant)
+SELECT * FROM zones WHERE STATE_ZONE LIKE '%INC097%' OR STATE_ZONE LIKE '%INZ097%';
 ```
 
 ### users
