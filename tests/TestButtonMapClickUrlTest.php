@@ -1,116 +1,132 @@
 <?php
+/**
+ * Test Button MapClick URL Test
+ * 
+ * Test suite to verify that the test button in the user management UI
+ * generates and sends MapClick URLs when test notifications are triggered.
+ * 
+ * This test addresses the issue where mock test alerts lacked zone data,
+ * preventing MapClick URL generation.
+ * 
+ * @package Alerts\Tests
+ * @author  Alerts Team
+ * @license MIT
+ */
+
+declare(strict_types=1);
+
+namespace Tests;
 
 use PHPUnit\Framework\TestCase;
 use App\DB\Connection;
 use App\Repository\AlertsRepository;
 
 /**
- * Test suite to verify that the test button in the user management UI
- * generates and sends MapClick URLs when test notifications are triggered.
- * 
- * This test addresses the issue where mock test alerts lacked zone data,
- * preventing MapClick URL generation.
+ * Test class for test button MapClick URL generation
  */
 class TestButtonMapClickUrlTest extends TestCase
 {
+    use TestMigrationTrait;
+
+    /**
+     * Test zone identifiers used in mock alerts
+     */
+    private const TEST_ZONE_SAME = 'INC001';
+    private const TEST_ZONE_UGC = 'INZ001';
+    
+    /**
+     * Test coordinates for Indiana zones
+     */
+    private const TEST_LAT = 39.7684; // Indianapolis latitude
+    private const TEST_LON = -86.1581; // Indianapolis longitude
+    private const TEST_FIPS = '18097'; // Marion County FIPS code
+    
+    /**
+     * @var \PDO Database connection
+     */
     private \PDO $pdo;
 
+    /**
+     * Set up test environment before each test
+     *
+     * @return void
+     */
     protected function setUp(): void
     {
         parent::setUp();
         $this->pdo = Connection::get();
         
-        // Create necessary tables
-        $this->createTables();
+        // Run migrations to create tables
+        $this->runMigrations();
         
-        // Insert sample zone data that matches the mock alert zones (INC001, INZ001)
+        // Clean up any existing test data
+        $this->pdo->exec("DELETE FROM zones WHERE ZONE IN ('" . self::TEST_ZONE_SAME . "', '" . self::TEST_ZONE_UGC . "')");
+        $this->pdo->exec("DELETE FROM incoming_alerts");
+        
+        // Insert sample zone data that matches the mock alert zones
         $this->insertSampleZones();
     }
 
+    /**
+     * Clean up test environment after each test
+     *
+     * @return void
+     */
     protected function tearDown(): void
     {
         // Clean up test data
-        $this->pdo->exec("DELETE FROM zones WHERE ZONE IN ('INC001', 'INZ001')");
+        $this->pdo->exec("DELETE FROM zones WHERE ZONE IN ('" . self::TEST_ZONE_SAME . "', '" . self::TEST_ZONE_UGC . "')");
         $this->pdo->exec("DELETE FROM incoming_alerts");
         parent::tearDown();
     }
 
-    private function createTables(): void
-    {
-        // Create zones table if not exists
-        $this->pdo->exec("CREATE TABLE IF NOT EXISTS zones (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ZONE TEXT NOT NULL,
-            NAME TEXT,
-            STATE TEXT,
-            CWA TEXT,
-            STATE_ZONE TEXT,
-            LON REAL,
-            LAT REAL,
-            SHORTNAME TEXT,
-            FIPS TEXT,
-            COUNTY TEXT
-        )");
-
-        // Create incoming_alerts table if not exists
-        $this->pdo->exec("CREATE TABLE IF NOT EXISTS incoming_alerts (
-            id TEXT PRIMARY KEY,
-            event TEXT,
-            severity TEXT,
-            certainty TEXT,
-            urgency TEXT,
-            headline TEXT,
-            description TEXT,
-            area_desc TEXT,
-            effective TEXT,
-            expires TEXT,
-            same_array TEXT,
-            ugc_array TEXT,
-            json TEXT,
-            received_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )");
-    }
-
+    /**
+     * Insert sample zone data for testing
+     *
+     * @return void
+     */
     private function insertSampleZones(): void
     {
-        // Insert test zone data for INC001 and INZ001 with valid coordinates
+        // Insert test zone data with valid coordinates
         $stmt = $this->pdo->prepare("INSERT OR IGNORE INTO zones 
             (ZONE, NAME, STATE, STATE_ZONE, LAT, LON, FIPS, COUNTY) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
         
         // Indiana test zones with actual coordinates
         $stmt->execute([
-            'INC001', 
+            self::TEST_ZONE_SAME, 
             'Test County', 
             'IN', 
-            'INC001',
-            39.7684, // Indianapolis latitude
-            -86.1581, // Indianapolis longitude
-            '18097',
+            self::TEST_ZONE_SAME,
+            self::TEST_LAT,
+            self::TEST_LON,
+            self::TEST_FIPS,
             'Marion'
         ]);
         
         $stmt->execute([
-            'INZ001',
+            self::TEST_ZONE_UGC,
             'Test Zone',
             'IN',
-            'INZ001',
-            39.7684,
-            -86.1581,
-            '18097',
+            self::TEST_ZONE_UGC,
+            self::TEST_LAT,
+            self::TEST_LON,
+            self::TEST_FIPS,
             'Marion'
         ]);
     }
 
     /**
      * Test that mock alert contains zone data needed for MapClick URL generation
+     *
+     * @return void
      */
     public function testMockAlertContainsZoneData(): void
     {
         // Simulate the scenario where no real alerts exist
         // This triggers the mock alert creation in users_table.php
         $stmt = $this->pdo->query("SELECT * FROM incoming_alerts ORDER BY RANDOM() LIMIT 1");
-        $testAlert = $stmt->fetch(PDO::FETCH_ASSOC);
+        $testAlert = $stmt->fetch(\PDO::FETCH_ASSOC);
         
         $this->assertFalse($testAlert, 'Should have no real alerts for this test');
         
@@ -127,8 +143,8 @@ class TestButtonMapClickUrlTest extends TestCase
             'effective' => date('Y-m-d H:i:s'),
             'expires' => date('Y-m-d H:i:s', strtotime('+1 hour')),
             // Zone data that enables MapClick URL generation
-            'same_array' => json_encode(['INC001']),
-            'ugc_array' => json_encode(['INZ001'])
+            'same_array' => json_encode([self::TEST_ZONE_SAME]),
+            'ugc_array' => json_encode([self::TEST_ZONE_UGC])
         ];
 
         // Verify zone data is present
@@ -149,6 +165,8 @@ class TestButtonMapClickUrlTest extends TestCase
 
     /**
      * Test that MapClick URL is generated from mock alert zone data
+     *
+     * @return void
      */
     public function testMapClickUrlGeneratedFromMockAlert(): void
     {
@@ -156,8 +174,8 @@ class TestButtonMapClickUrlTest extends TestCase
         $mockAlert = [
             'id' => 'TEST-' . time(),
             'event' => 'Test Weather Alert',
-            'same_array' => json_encode(['INC001']),
-            'ugc_array' => json_encode(['INZ001'])
+            'same_array' => json_encode([self::TEST_ZONE_SAME]),
+            'ugc_array' => json_encode([self::TEST_ZONE_UGC])
         ];
 
         // Simulate the MapClick URL generation logic from users_table.php
@@ -202,13 +220,15 @@ class TestButtonMapClickUrlTest extends TestCase
         $this->assertStringContainsString('lon=', $alertUrl);
         
         // Verify URL contains expected coordinates (from our test zones)
-        $this->assertStringContainsString('39.7684', $alertUrl);
-        $this->assertStringContainsString('-86.1581', $alertUrl);
+        $this->assertStringContainsString((string)self::TEST_LAT, $alertUrl);
+        $this->assertStringContainsString((string)self::TEST_LON, $alertUrl);
     }
 
     /**
      * Test that the old mock alert (without zone data) would NOT generate MapClick URL
      * This verifies the bug that was fixed
+     *
+     * @return void
      */
     public function testOldMockAlertWithoutZoneDataDoesNotGenerateUrl(): void
     {
@@ -241,13 +261,15 @@ class TestButtonMapClickUrlTest extends TestCase
 
     /**
      * Test the complete flow: mock alert with zone data generates valid coordinates
+     *
+     * @return void
      */
     public function testCompleteFlowMockAlertToCoordinates(): void
     {
         // Mock alert with zone data
         $mockAlert = [
-            'same_array' => json_encode(['INC001']),
-            'ugc_array' => json_encode(['INZ001'])
+            'same_array' => json_encode([self::TEST_ZONE_SAME]),
+            'ugc_array' => json_encode([self::TEST_ZONE_UGC])
         ];
 
         // Extract zone IDs
@@ -270,10 +292,8 @@ class TestButtonMapClickUrlTest extends TestCase
         $this->assertIsNumeric($coords['lat']);
         $this->assertIsNumeric($coords['lon']);
         
-        // Verify coordinates are reasonable (Indiana area)
-        $this->assertGreaterThan(38.0, $coords['lat']); // Southern Indiana
-        $this->assertLessThan(42.0, $coords['lat']); // Northern Indiana
-        $this->assertGreaterThan(-88.0, $coords['lon']); // Eastern Indiana
-        $this->assertLessThan(-84.0, $coords['lon']); // Western Indiana
+        // Verify coordinates match expected test values
+        $this->assertEquals(self::TEST_LAT, $coords['lat'], 'Latitude should match test zone coordinates');
+        $this->assertEquals(self::TEST_LON, $coords['lon'], 'Longitude should match test zone coordinates');
     }
 }
