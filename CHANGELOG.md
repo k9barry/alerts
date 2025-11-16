@@ -1,3 +1,10 @@
+### Changed
+- Alert URLs now link to user-facing forecast pages using zone coordinates
+- Notification logging now records per-user, per-channel results; supports multiple users per alert
+
+### Fixed
+- Ensured ntfy notifications are properly logged in sent alerts
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
