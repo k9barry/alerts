@@ -26,6 +26,9 @@ use App\Repository\AlertsRepository;
  */
 class TestButtonMapClickUrlTest extends TestCase
 {
+    // Note: This test uses TestMigrationTrait and declares a namespace for explicit database migration setup.
+    // Other tests (e.g., TestAlertWorkflowFieldsTest.php, UsersDownloadUploadTest.php) do not use this trait or a namespace.
+    // This is intentional because this test requires guaranteed table creation and isolation for zone/mapclick logic.
     use TestMigrationTrait;
 
     /**
