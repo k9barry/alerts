@@ -316,7 +316,8 @@ if ($requestUri === '/api/test-alert' && $method === 'POST') {
         $testAlert = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if (!$testAlert) {
-            // No alerts available, create a mock alert
+            // No alerts available, create a mock alert with sample zone data
+            // Using Indiana test zones (INC001) with coordinates that will generate a MapClick URL
             $testAlert = [
                 'id' => 'TEST-' . time(),
                 'event' => 'Test Weather Alert',
@@ -327,7 +328,10 @@ if ($requestUri === '/api/test-alert' && $method === 'POST') {
                 'description' => 'This is a test notification sent from the Weather Alerts system. If you receive this, your notification settings are working correctly!',
                 'area_desc' => 'Test Area',
                 'effective' => date('Y-m-d H:i:s'),
-                'expires' => date('Y-m-d H:i:s', strtotime('+1 hour'))
+                'expires' => date('Y-m-d H:i:s', strtotime('+1 hour')),
+                // Add sample zone data so MapClick URL can be generated
+                'same_array' => json_encode(['INC001']),
+                'ugc_array' => json_encode(['INZ001'])
             ];
         }
         
