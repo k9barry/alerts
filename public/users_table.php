@@ -317,7 +317,24 @@ if ($requestUri === '/api/test-alert' && $method === 'POST') {
         
         if (!$testAlert) {
             // No alerts available, create a mock alert with sample zone data
-            // Using Indiana test zones (INC001) with coordinates that will generate a MapClick URL
+            // Query for any zones with coordinates in the database to use for testing
+            $zoneStmt = $pdo->query("SELECT ZONE, STATE_ZONE FROM zones WHERE LAT IS NOT NULL AND LON IS NOT NULL LIMIT 2");
+            $availableZones = $zoneStmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            $sameZone = null;
+            $ugcZone = null;
+            
+            if (!empty($availableZones)) {
+                // Use the first available zone for same_array
+                $sameZone = $availableZones[0]['STATE_ZONE'] ?? $availableZones[0]['ZONE'] ?? null;
+                // Use the second zone if available, otherwise reuse the first
+                if (count($availableZones) > 1) {
+                    $ugcZone = $availableZones[1]['STATE_ZONE'] ?? $availableZones[1]['ZONE'] ?? null;
+                } else {
+                    $ugcZone = $availableZones[0]['ZONE'] ?? null;
+                }
+            }
+            
             $testAlert = [
                 'id' => 'TEST-' . time(),
                 'event' => 'Test Weather Alert',
@@ -329,9 +346,9 @@ if ($requestUri === '/api/test-alert' && $method === 'POST') {
                 'area_desc' => 'Test Area',
                 'effective' => date('Y-m-d H:i:s'),
                 'expires' => date('Y-m-d H:i:s', strtotime('+1 hour')),
-                // Add sample zone data so MapClick URL can be generated
-                'same_array' => json_encode(['INC001']),
-                'ugc_array' => json_encode(['INZ001'])
+                // Add zone data from actual database zones if available, enabling MapClick URL generation
+                'same_array' => $sameZone ? json_encode([$sameZone]) : json_encode([]),
+                'ugc_array' => $ugcZone ? json_encode([$ugcZone]) : json_encode([])
             ];
         }
         

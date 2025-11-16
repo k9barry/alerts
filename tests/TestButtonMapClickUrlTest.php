@@ -62,8 +62,9 @@ class TestButtonMapClickUrlTest extends TestCase
         // Run migrations to create tables
         $this->runMigrations();
         
-        // Clean up any existing test data
-        $this->pdo->exec("DELETE FROM zones WHERE ZONE IN ('" . self::TEST_ZONE_SAME . "', '" . self::TEST_ZONE_UGC . "')");
+        // Clean up any existing test data using prepared statements
+        $stmt = $this->pdo->prepare("DELETE FROM zones WHERE ZONE IN (?, ?)");
+        $stmt->execute([self::TEST_ZONE_SAME, self::TEST_ZONE_UGC]);
         $this->pdo->exec("DELETE FROM incoming_alerts");
         
         // Insert sample zone data that matches the mock alert zones
@@ -77,8 +78,9 @@ class TestButtonMapClickUrlTest extends TestCase
      */
     protected function tearDown(): void
     {
-        // Clean up test data
-        $this->pdo->exec("DELETE FROM zones WHERE ZONE IN ('" . self::TEST_ZONE_SAME . "', '" . self::TEST_ZONE_UGC . "')");
+        // Clean up test data using prepared statements
+        $stmt = $this->pdo->prepare("DELETE FROM zones WHERE ZONE IN (?, ?)");
+        $stmt->execute([self::TEST_ZONE_SAME, self::TEST_ZONE_UGC]);
         $this->pdo->exec("DELETE FROM incoming_alerts");
         parent::tearDown();
     }
