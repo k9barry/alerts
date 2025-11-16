@@ -237,6 +237,77 @@ $ensureColumn($pdo, 'users', 'NtfyTopic TEXT');
 // Create index for users email
 $pdo->exec("CREATE INDEX IF NOT EXISTS idx_users_email ON users(Email)");
 
+// Migrate sent_alerts table to support composite primary key (id, user_id)
+// This allows multiple users to receive the same alert and have separate records
+$sentAlertsInfo = $pdo->query("SELECT sql FROM sqlite_master WHERE type='table' AND name='sent_alerts'")->fetch(PDO::FETCH_ASSOC);
+if ($sentAlertsInfo && isset($sentAlertsInfo['sql'])) {
+    $sql = $sentAlertsInfo['sql'];
+    // Check if it has single PRIMARY KEY on id (needs migration to composite key)
+    if (preg_match('/id TEXT PRIMARY KEY/i', $sql)) {
+        echo "Migrating sent_alerts table to support composite primary key (id, user_id)...\n";
+        
+        $pdo->beginTransaction();
+        try {
+            // Create new table with composite primary key
+            $pdo->exec("CREATE TABLE sent_alerts_new (
+                id TEXT NOT NULL,
+                type TEXT,
+                status TEXT,
+                msg_type TEXT,
+                category TEXT,
+                severity TEXT,
+                certainty TEXT,
+                urgency TEXT,
+                event TEXT,
+                headline TEXT,
+                description TEXT,
+                instruction TEXT,
+                area_desc TEXT,
+                sent TEXT,
+                effective TEXT,
+                onset TEXT,
+                expires TEXT,
+                ends TEXT,
+                same_array TEXT NOT NULL,
+                ugc_array TEXT NOT NULL,
+                json TEXT NOT NULL,
+                notified_at TEXT,
+                result_status TEXT,
+                result_attempts INTEGER NOT NULL DEFAULT 0,
+                result_error TEXT,
+                pushover_request_id TEXT,
+                user_id INTEGER NOT NULL,
+                channel TEXT,
+                PRIMARY KEY (id, user_id, channel)
+            )");
+            
+            // Copy existing data (set default channel to 'pushover' for existing records)
+            $pdo->exec("INSERT INTO sent_alerts_new SELECT 
+                id, type, status, msg_type, category, severity, certainty, urgency,
+                event, headline, description, instruction, area_desc, sent, effective,
+                onset, expires, ends, same_array, ugc_array, json,
+                notified_at, result_status, result_attempts, result_error, pushover_request_id,
+                COALESCE(user_id, 0), 'pushover'
+                FROM sent_alerts");
+            
+            // Replace old table with new one
+            $pdo->exec("DROP TABLE sent_alerts");
+            $pdo->exec("ALTER TABLE sent_alerts_new RENAME TO sent_alerts");
+            
+            // Create indexes
+            $pdo->exec("CREATE INDEX IF NOT EXISTS idx_sent_alerts_user_id ON sent_alerts(user_id)");
+            $pdo->exec("CREATE INDEX IF NOT EXISTS idx_sent_alerts_notified_at ON sent_alerts(notified_at)");
+            
+            $pdo->commit();
+            echo "sent_alerts table migration completed - now supports multiple users and channels per alert\n";
+        } catch (Exception $e) {
+            $pdo->rollback();
+            echo "Error migrating sent_alerts table: " . $e->getMessage() . "\n";
+            throw $e;
+        }
+    }
+}
+
 // Load zones data if file exists and table is empty
 // Extract filename from zones data URL for local storage
 $zonesFileName = basename(parse_url(Config::$zonesDataUrl, PHP_URL_PATH));

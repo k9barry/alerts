@@ -252,49 +252,106 @@ final class AlertsRepository
      * Uses INSERT OR REPLACE to handle retries.
      * 
      * @param array $row Alert data from pending_alerts
-     * @param array $result Notification result with keys: status, attempts, error, request_id, user_id
+     * @param array $result Notification result with keys: status, attempts, error, request_id, user_id, channels
      * @return void
      */
   public function insertSentResult(array $row, array $result): void
   {
-    $stmt = $this->db->prepare('INSERT OR REPLACE INTO sent_alerts (
-            id, type, status, msg_type, category, severity, certainty, urgency,
-            event, headline, description, instruction, area_desc, sent, effective,
-            onset, expires, ends, same_array, ugc_array, json,
-            notified_at, result_status, result_attempts, result_error, pushover_request_id, user_id
-        ) VALUES (
-            :id, :type, :status, :msg_type, :category, :severity, :certainty, :urgency,
-            :event, :headline, :description, :instruction, :area_desc, :sent, :effective,
-            :onset, :expires, :ends, :same_array, :ugc_array, :json,
-            CURRENT_TIMESTAMP, :result_status, :result_attempts, :result_error, :request_id, :user_id
-        )');
-    $stmt->execute([
-      ':id' => $row['id'],
-      ':type' => $row['type'] ?? null,
-      ':status' => $row['status'] ?? null,
-      ':msg_type' => $row['msg_type'] ?? null,
-      ':category' => $row['category'] ?? null,
-      ':severity' => $row['severity'] ?? null,
-      ':certainty' => $row['certainty'] ?? null,
-      ':urgency' => $row['urgency'] ?? null,
-      ':event' => $row['event'] ?? null,
-      ':headline' => $row['headline'] ?? null,
-      ':description' => $row['description'] ?? null,
-      ':instruction' => $row['instruction'] ?? null,
-      ':area_desc' => $row['area_desc'] ?? null,
-      ':sent' => $row['sent'] ?? null,
-      ':effective' => $row['effective'] ?? null,
-      ':onset' => $row['onset'] ?? null,
-      ':expires' => $row['expires'] ?? null,
-      ':ends' => $row['ends'] ?? null,
-      ':same_array' => $row['same_array'] ?? '[]',
-      ':ugc_array' => $row['ugc_array'] ?? '[]',
-      ':json' => $row['json'],
-      ':result_status' => $result['status'] ?? null,
-      ':result_attempts' => $result['attempts'] ?? 0,
-      ':result_error' => $result['error'] ?? null,
-      ':request_id' => $result['request_id'] ?? null,
-      ':user_id' => $result['user_id'] ?? null,
-    ]);
+    $userId = $result['user_id'] ?? null;
+    $channels = $result['channels'] ?? [];
+    
+    // Insert a record for each channel that was attempted
+    foreach ($channels as $channelResult) {
+      $channel = $channelResult['channel'] ?? 'unknown';
+      $channelData = $channelResult['result'] ?? [];
+      
+      $stmt = $this->db->prepare('INSERT OR REPLACE INTO sent_alerts (
+              id, type, status, msg_type, category, severity, certainty, urgency,
+              event, headline, description, instruction, area_desc, sent, effective,
+              onset, expires, ends, same_array, ugc_array, json,
+              notified_at, result_status, result_attempts, result_error, pushover_request_id, user_id, channel
+          ) VALUES (
+              :id, :type, :status, :msg_type, :category, :severity, :certainty, :urgency,
+              :event, :headline, :description, :instruction, :area_desc, :sent, :effective,
+              :onset, :expires, :ends, :same_array, :ugc_array, :json,
+              CURRENT_TIMESTAMP, :result_status, :result_attempts, :result_error, :request_id, :user_id, :channel
+          )');
+      $stmt->execute([
+        ':id' => $row['id'],
+        ':type' => $row['type'] ?? null,
+        ':status' => $row['status'] ?? null,
+        ':msg_type' => $row['msg_type'] ?? null,
+        ':category' => $row['category'] ?? null,
+        ':severity' => $row['severity'] ?? null,
+        ':certainty' => $row['certainty'] ?? null,
+        ':urgency' => $row['urgency'] ?? null,
+        ':event' => $row['event'] ?? null,
+        ':headline' => $row['headline'] ?? null,
+        ':description' => $row['description'] ?? null,
+        ':instruction' => $row['instruction'] ?? null,
+        ':area_desc' => $row['area_desc'] ?? null,
+        ':sent' => $row['sent'] ?? null,
+        ':effective' => $row['effective'] ?? null,
+        ':onset' => $row['onset'] ?? null,
+        ':expires' => $row['expires'] ?? null,
+        ':ends' => $row['ends'] ?? null,
+        ':same_array' => $row['same_array'] ?? '[]',
+        ':ugc_array' => $row['ugc_array'] ?? '[]',
+        ':json' => $row['json'],
+        ':result_status' => $channelData['status'] ?? null,
+        ':result_attempts' => $channelData['attempts'] ?? 0,
+        ':result_error' => $channelData['error'] ?? null,
+        ':request_id' => $channelData['request_id'] ?? null,
+        ':user_id' => $userId,
+        ':channel' => $channel,
+      ]);
+    }
+  }
+
+  /**
+   * Get the first matching zone's LAT and LON coordinates for a list of zone identifiers.
+   * Searches zones table for matching STATE_ZONE, ZONE, or FIPS values.
+   * 
+   * @param array $zoneIds Array of zone identifiers (e.g., ["INZ040", "INC040", "018033"])
+   * @return array{lat: float|null, lon: float|null} Coordinates or nulls if no match found
+   */
+  public function getZoneCoordinates(array $zoneIds): array
+  {
+    if (empty($zoneIds)) {
+      return ['lat' => null, 'lon' => null];
+    }
+    
+    // Build a query to match against STATE_ZONE (which contains comma-separated variants like "INC040,INZ040"),
+    // ZONE (raw zone number), or FIPS
+    $conditions = [];
+    $params = [];
+    
+    foreach ($zoneIds as $idx => $zoneId) {
+      $zoneId = trim((string)$zoneId);
+      if ($zoneId === '') continue;
+      
+      $paramName = ':zone' . $idx;
+      $params[$paramName] = $zoneId;
+      
+      // Check if STATE_ZONE contains this ID (handles comma-separated values)
+      // Also check ZONE and FIPS columns for direct matches
+      $conditions[] = "(STATE_ZONE LIKE '%' || {$paramName} || '%' OR ZONE = {$paramName} OR FIPS = {$paramName})";
+    }
+    
+    if (empty($conditions)) {
+      return ['lat' => null, 'lon' => null];
+    }
+    
+    $sql = 'SELECT LAT, LON FROM zones WHERE ' . implode(' OR ', $conditions) . ' AND LAT IS NOT NULL AND LON IS NOT NULL LIMIT 1';
+    $stmt = $this->db->prepare($sql);
+    $stmt->execute($params);
+    $result = $stmt->fetch(\PDO::FETCH_ASSOC);
+    
+    if ($result && isset($result['LAT'], $result['LON'])) {
+      return ['lat' => (float)$result['LAT'], 'lon' => (float)$result['LON']];
+    }
+    
+    return ['lat' => null, 'lon' => null];
   }
 }
+

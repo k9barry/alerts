@@ -118,9 +118,10 @@ final class PushoverNotifier
      *
      * @param array $alertRow
      * @param array $userRow
+     * @param string|null $customUrl Optional custom URL to use instead of alert id
      * @return array
      */
-    public function notifyDetailedForUser(array $alertRow, array $userRow): array
+    public function notifyDetailedForUser(array $alertRow, array $userRow, ?string $customUrl = null): array
     {
       $user = trim((string)($userRow['PushoverUser'] ?? $userRow['Pushoveruser'] ?? ''));
       $token = trim((string)($userRow['PushoverToken'] ?? $userRow['Pushovertoken'] ?? ''));
@@ -142,7 +143,8 @@ final class PushoverNotifier
         'priority' => 0,
       ];
 
-      $idUrl = $alertRow['id'] ?? null;
+      // Use custom URL if provided, otherwise fall back to alert id
+      $idUrl = $customUrl ?? ($alertRow['id'] ?? null);
       if (is_string($idUrl) && preg_match('#^https?://#i', $idUrl)) {
         $body['url'] = $idUrl;
         $body['url_title'] = 'Details';
