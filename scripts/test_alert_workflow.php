@@ -215,8 +215,44 @@ try {
     if ($expires) $message .= "Expires: {$expires}\n";
     $message .= "\n{$description}\n";
     
-    // Get alert URL
-    $alertUrl = "https://api.weather.gov/alerts/{$testAlert['id']}";
+    // Generate MapClick URL with zone coordinates if available
+    $alertUrl = null;
+    if (isset($testAlert['same_array']) || isset($testAlert['ugc_array'])) {
+        $sameArray = json_decode($testAlert['same_array'] ?? '[]', true) ?: [];
+        $ugcArray = json_decode($testAlert['ugc_array'] ?? '[]', true) ?: [];
+        $alertIds = [];
+        foreach (array_merge($sameArray, $ugcArray) as $v) {
+            if (is_null($v)) continue;
+            if (is_int($v) || (is_string($v) && preg_match('/^[0-9]+$/', $v))) {
+                $alertIds[] = (string)$v;
+            } elseif (is_string($v) && trim($v) !== '') {
+                $v = trim($v);
+                if (preg_match('/^[a-z]{2,3}c?\d+$/i', $v)) {
+                    $alertIds[] = strtoupper($v);
+                } else {
+                    $alertIds[] = $v;
+                }
+            }
+        }
+        $alertIds = array_values(array_unique($alertIds));
+        
+        if (!empty($alertIds)) {
+            $alertsRepo = new \App\Repository\AlertsRepository();
+            $coords = $alertsRepo->getZoneCoordinates($alertIds);
+            if ($coords['lat'] !== null && $coords['lon'] !== null) {
+                $alertUrl = sprintf(
+                    'https://forecast.weather.gov/MapClick.php?lat=%s&lon=%s&lg=english&FcstType=graphical&menu=1',
+                    $coords['lat'],
+                    $coords['lon']
+                );
+            }
+        }
+    }
+    
+    // Fall back to alert ID if it's a valid URL and we don't have coordinates
+    if ($alertUrl === null && isset($testAlert['id']) && is_string($testAlert['id']) && preg_match('#^https?://#i', $testAlert['id'])) {
+        $alertUrl = $testAlert['id'];
+    }
     
     echo "  Message prepared:\n";
     echo "  " . str_repeat("-", 66) . "\n";
