@@ -260,7 +260,8 @@ final class AlertsRepository
     $userId = $result['user_id'] ?? null;
     $channels = $result['channels'] ?? [];
     
-    // Insert a record for each channel that was attempted
+    // If $channels is empty, no records will be inserted into sent_alerts.
+    // This is intentional: only attempted notification channels are recorded.
     foreach ($channels as $channelResult) {
       $channel = $channelResult['channel'] ?? 'unknown';
       $channelData = $channelResult['result'] ?? [];
@@ -335,7 +336,14 @@ final class AlertsRepository
       
       // Check if STATE_ZONE contains this ID (handles comma-separated values)
       // Also check ZONE and FIPS columns for direct matches
-      $conditions[] = "(STATE_ZONE LIKE '%' || {$paramName} || '%' OR ZONE = {$paramName} OR FIPS = {$paramName})";
+      $conditions[] = "("
+        . "STATE_ZONE = {$paramName} "
+        . "OR STATE_ZONE LIKE {$paramName} || ',%' "
+        . "OR STATE_ZONE LIKE '%,' || {$paramName} "
+        . "OR STATE_ZONE LIKE '%,' || {$paramName} || ',%' "
+        . "OR ZONE = {$paramName} "
+        . "OR FIPS = {$paramName}"
+        . ")";
     }
     
     if (empty($conditions)) {

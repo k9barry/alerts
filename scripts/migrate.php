@@ -282,12 +282,13 @@ if ($sentAlertsInfo && isset($sentAlertsInfo['sql'])) {
             )");
             
             // Copy existing data (set default channel to 'pushover' for existing records)
+            // Use -1 as sentinel for unknown user_id (migrated records with NULL user_id)
             $pdo->exec("INSERT INTO sent_alerts_new SELECT 
                 id, type, status, msg_type, category, severity, certainty, urgency,
                 event, headline, description, instruction, area_desc, sent, effective,
                 onset, expires, ends, same_array, ugc_array, json,
                 notified_at, result_status, result_attempts, result_error, pushover_request_id,
-                COALESCE(user_id, 0), 'pushover'
+                COALESCE(user_id, -1), 'pushover'
                 FROM sent_alerts");
             
             // Replace old table with new one

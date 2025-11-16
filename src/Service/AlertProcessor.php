@@ -124,7 +124,7 @@ final class AlertProcessor
             if ($coords['lat'] !== null && $coords['lon'] !== null) {
               // Build MapClick URL with zone coordinates
               $detailsUrl = sprintf(
-                'https://forecast.weather.gov/MapClick.php?lat=%s&lon=%s&lg=english&&FcstType=graphical&menu=1',
+                'https://forecast.weather.gov/MapClick.php?lat=%s&lon=%s&lg=english&FcstType=graphical&menu=1',
                 $coords['lat'],
                 $coords['lon']
               );
