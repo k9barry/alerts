@@ -183,16 +183,40 @@ class TestButtonMapClickUrlTest extends TestCase
             'ugc_array' => json_encode([self::TEST_ZONE_UGC])
         ];
 
-        // This logic should be moved to a new, testable method, for example:
-        // $urlBuilder = new UrlBuilder($this->pdo);
-        // $alertUrl = $urlBuilder->createMapClickUrl($mockAlert);
-
-        // For the purpose of this suggestion, we'll assume the logic is extracted
-        // and we are just calling it. The test would be simplified to:
-
-        // Simulate the MapClick URL generation by calling the (new) dedicated method
-        $alertsRepo = new AlertsRepository(); // Or another appropriate service class
-        $alertUrl = $alertsRepo->generateMapClickUrl($mockAlert);
+        // Simulate the MapClick URL generation logic from users_table.php
+        $alertUrl = null;
+        if (isset($mockAlert['same_array']) || isset($mockAlert['ugc_array'])) {
+            $sameArray = json_decode($mockAlert['same_array'] ?? '[]', true) ?: [];
+            $ugcArray = json_decode($mockAlert['ugc_array'] ?? '[]', true) ?: [];
+            $alertIds = [];
+            
+            foreach (array_merge($sameArray, $ugcArray) as $v) {
+                if (is_null($v)) continue;
+                if (is_int($v) || (is_string($v) && preg_match('/^[0-9]+$/', $v))) {
+                    $alertIds[] = (string)$v;
+                } elseif (is_string($v) && trim($v) !== '') {
+                    $v = trim($v);
+                    if (preg_match('/^[a-z]{2,3}c?\d+$/i', $v)) {
+                        $alertIds[] = strtoupper($v);
+                    } else {
+                        $alertIds[] = $v;
+                    }
+                }
+            }
+            $alertIds = array_values(array_unique($alertIds));
+            
+            if (!empty($alertIds)) {
+                $alertsRepo = new AlertsRepository();
+                $coords = $alertsRepo->getZoneCoordinates($alertIds);
+                if ($coords['lat'] !== null && $coords['lon'] !== null) {
+                    $alertUrl = sprintf(
+                        'https://forecast.weather.gov/MapClick.php?lat=%s&lon=%s&lg=english&FcstType=graphical&menu=1',
+                        $coords['lat'],
+                        $coords['lon']
+                    );
+                }
+            }
+        }
 
         // Verify MapClick URL was generated
         $this->assertNotNull($alertUrl, 'MapClick URL should be generated from mock alert zone data');
