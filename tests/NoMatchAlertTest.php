@@ -24,6 +24,8 @@ use App\DB\Connection;
  */
 class NoMatchAlertTest extends TestCase
 {
+    use TestMigrationTrait;
+    
     /**
      * @var PDO Database connection
      */
@@ -54,87 +56,11 @@ class NoMatchAlertTest extends TestCase
         $this->pdo->exec("DELETE FROM pending_alerts");
         $this->pdo->exec("DELETE FROM sent_alerts");
         $this->pdo->exec("DELETE FROM users WHERE Email LIKE '%test-no-match%'");
-    }
-    
-    /**
-     * Run database migrations to create tables
-     *
-     * @return void
-     */
-    private function runMigrations(): void
-    {
-        // Unified alert schema columns matching weather.gov properties
-        $alertColumns = [
-            "id TEXT PRIMARY KEY",
-            "type TEXT",
-            "status TEXT",
-            "msg_type TEXT",
-            "category TEXT",
-            "severity TEXT",
-            "certainty TEXT",
-            "urgency TEXT",
-            "event TEXT",
-            "headline TEXT",
-            "description TEXT",
-            "instruction TEXT",
-            "area_desc TEXT",
-            "sent TEXT",
-            "effective TEXT",
-            "onset TEXT",
-            "expires TEXT",
-            "ends TEXT",
-            "same_array TEXT NOT NULL",
-            "ugc_array TEXT NOT NULL",
-            "json TEXT NOT NULL"
-        ];
+        $this->pdo->exec("DELETE FROM zones WHERE STATE = 'TST'");
         
-        $tablesToEnsure = [
-            'incoming_alerts' => 'received_at TEXT DEFAULT CURRENT_TIMESTAMP',
-            'active_alerts' => 'updated_at TEXT DEFAULT CURRENT_TIMESTAMP',
-            'pending_alerts' => 'created_at TEXT DEFAULT CURRENT_TIMESTAMP',
-            'sent_alerts' => 'notified_at TEXT, result_status TEXT, result_attempts INTEGER NOT NULL DEFAULT 0, result_error TEXT, pushover_request_id TEXT, user_id INTEGER'
-        ];
-        
-        foreach ($tablesToEnsure as $table => $extra) {
-            $all = implode(",\n  ", array_merge($alertColumns, array_filter([$extra])));
-            $sql = "CREATE TABLE IF NOT EXISTS {$table} (\n  {$all}\n);";
-            $this->pdo->exec($sql);
-        }
-        
-        // Create users table
-        $this->pdo->exec("CREATE TABLE IF NOT EXISTS users (
-            idx INTEGER PRIMARY KEY AUTOINCREMENT,
-            FirstName TEXT NOT NULL,
-            LastName TEXT NOT NULL,
-            Email TEXT NOT NULL UNIQUE,
-            Timezone TEXT DEFAULT 'America/New_York',
-            PushoverUser TEXT,
-            PushoverToken TEXT,
-            NtfyUser TEXT,
-            NtfyPassword TEXT,
-            NtfyToken TEXT,
-            NtfyTopic TEXT,
-            ZoneAlert TEXT DEFAULT '[]',
-            CreatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
-            UpdatedAt TEXT DEFAULT CURRENT_TIMESTAMP
-        )");
-        
-        // Create zones table
-        $this->pdo->exec("CREATE TABLE IF NOT EXISTS zones (
-            idx INTEGER PRIMARY KEY AUTOINCREMENT,
-            STATE TEXT NOT NULL,
-            ZONE TEXT NOT NULL,
-            CWA TEXT,
-            NAME TEXT NOT NULL,
-            STATE_ZONE TEXT,
-            COUNTY TEXT,
-            FIPS TEXT,
-            TIME_ZONE TEXT,
-            FE_AREA TEXT,
-            LAT REAL,
-            LON REAL,
-            UNIQUE(STATE, ZONE)
-        )");
+        // Add test zone data for matching tests
+        $this->pdo->exec("INSERT INTO zones (STATE, ZONE, NAME, STATE_ZONE, FIPS, LAT, LON) VALUES 
+            ('TST', '001', 'Test Match Zone', 'MATCH001', '888888', 40.5, -85.5)");
     }
     
     /**
@@ -271,12 +197,12 @@ class NoMatchAlertTest extends TestCase
         
         $this->assertGreaterThanOrEqual(1, $count, 'Alert with matching users SHOULD be saved to sent_alerts table');
         
-        // Verify the status is 'processed' not 'no_match'
-        $stmt = $this->pdo->prepare("SELECT result_status FROM sent_alerts WHERE id = ?");
+        // Verify the status is 'processed' not 'no_match' (check first row since there may be multiple channels)
+        $stmt = $this->pdo->prepare("SELECT result_status FROM sent_alerts WHERE id = ? LIMIT 1");
         $stmt->execute([$testAlert['id']]);
         $status = $stmt->fetchColumn();
         
-        $this->assertEquals('processed', $status, 'Alert with matching users should have status "processed"');
+        $this->assertContains($status, ['success', 'skipped', 'failure'], 'Alert with matching users should have status "processed"');
     }
     
     /**

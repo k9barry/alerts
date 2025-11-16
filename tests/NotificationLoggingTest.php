@@ -23,6 +23,8 @@ use App\DB\Connection;
  */
 class NotificationLoggingTest extends TestCase
 {
+    use TestMigrationTrait;
+    
     /**
      * @var \PDO Database connection
      */
@@ -54,71 +56,6 @@ class NotificationLoggingTest extends TestCase
         // Insert test zone data
         $this->pdo->exec("INSERT INTO zones (STATE, ZONE, NAME, STATE_ZONE, FIPS, LAT, LON) VALUES 
             ('IN', '040', 'Delaware County', 'INC040,INZ040', '018035', 40.3346, -85.6495)");
-    }
-    
-    /**
-     * Run database migrations to create tables
-     *
-     * @return void
-     */
-    private function runMigrations(): void
-    {
-        // Alert columns
-        $alertColumns = [
-            "id TEXT NOT NULL",
-            "type TEXT",
-            "status TEXT",
-            "msg_type TEXT",
-            "category TEXT",
-            "severity TEXT",
-            "certainty TEXT",
-            "urgency TEXT",
-            "event TEXT",
-            "headline TEXT",
-            "description TEXT",
-            "instruction TEXT",
-            "area_desc TEXT",
-            "sent TEXT",
-            "effective TEXT",
-            "onset TEXT",
-            "expires TEXT",
-            "ends TEXT",
-            "same_array TEXT NOT NULL",
-            "ugc_array TEXT NOT NULL",
-            "json TEXT NOT NULL"
-        ];
-        
-        $alertCols = implode(",\n  ", $alertColumns);
-        
-        // Create sent_alerts table with composite primary key
-        $this->pdo->exec("CREATE TABLE IF NOT EXISTS sent_alerts (
-            {$alertCols},
-            notified_at TEXT,
-            result_status TEXT,
-            result_attempts INTEGER NOT NULL DEFAULT 0,
-            result_error TEXT,
-            pushover_request_id TEXT,
-            user_id INTEGER NOT NULL,
-            channel TEXT,
-            PRIMARY KEY (id, user_id, channel)
-        )");
-        
-        // Create zones table
-        $this->pdo->exec("CREATE TABLE IF NOT EXISTS zones (
-            idx INTEGER PRIMARY KEY AUTOINCREMENT,
-            STATE TEXT NOT NULL,
-            ZONE TEXT NOT NULL,
-            CWA TEXT,
-            NAME TEXT NOT NULL,
-            STATE_ZONE TEXT,
-            COUNTY TEXT,
-            FIPS TEXT,
-            TIME_ZONE TEXT,
-            FE_AREA TEXT,
-            LAT REAL,
-            LON REAL,
-            UNIQUE(STATE, ZONE)
-        )");
     }
     
     /**

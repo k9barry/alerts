@@ -2,6 +2,7 @@
 // Test bootstrap - initialize Config with test values
 
 require_once __DIR__ . '/../vendor/autoload.php';
+require_once __DIR__ . '/TestMigrationTrait.php';
 
 // Initialize Config with test defaults
 App\Config::$appName = 'test-alerts';
