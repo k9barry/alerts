@@ -118,18 +118,30 @@ final class AlertProcessor
             if (empty(array_intersect($alertIds, $userZoneIds))) continue;
             $anyMatch = true;
 
+            // Get zone coordinates for the alert (use first matching zone)
+            $coords = $this->alerts->getZoneCoordinates($alertIds);
+            $detailsUrl = null;
+            if ($coords['lat'] !== null && $coords['lon'] !== null) {
+              // Build MapClick URL with zone coordinates
+              $detailsUrl = sprintf(
+                'https://forecast.weather.gov/MapClick.php?lat=%s&lon=%s&lg=english&FcstType=graphical&menu=1',
+                $coords['lat'],
+                $coords['lon']
+              );
+            }
+
             // send per-user notifications using their credentials
             $channels = [];
             $pushoverReqId = null;
             if (Config::$pushoverEnabled) {
-              $res = $this->pushover->notifyDetailedForUser($p, $u);
+              $res = $this->pushover->notifyDetailedForUser($p, $u, $detailsUrl);
               $channels[] = ['channel' => 'pushover', 'result' => $res];
               $pushoverReqId = $res['request_id'] ?? null;
             }
             // Send ntfy notification if ntfy is initialized and either global topic is valid OR user has a topic
             if ($this->ntfy && ($this->ntfy->isEnabled() || !empty($u['NtfyTopic']))) {
               // use per-user send which prefers user's NtfyToken/NtfyUser+Password and NtfyTopic
-              $ntfyRes = $this->ntfy->notifyDetailedForUser($p, $u);
+              $ntfyRes = $this->ntfy->notifyDetailedForUser($p, $u, $detailsUrl);
               $channels[] = ['channel' => 'ntfy', 'result' => $ntfyRes];
             }
 

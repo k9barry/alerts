@@ -412,9 +412,10 @@ class NtfyNotifier
    *
    * @param array $alertRow Row from alerts table (expected keys: json, id, event, headline, etc.)
    * @param array $userRow User row with optional NtfyTopic, NtfyToken, NtfyUser, NtfyPassword
+   * @param string|null $customUrl Optional custom URL to use instead of alert id
    * @return array{status:string,attempts:int,error:string|null}
    */
-  public function notifyDetailedForUser(array $alertRow, array $userRow): array
+  public function notifyDetailedForUser(array $alertRow, array $userRow, ?string $customUrl = null): array
   {
     $userIdx = $userRow['idx'] ?? null;
     
@@ -468,8 +469,8 @@ class NtfyNotifier
       'http_errors' => false,
     ]);
 
-    // Add link to NWS alert page if id is a URL
-    $idUrl = $alertRow['id'] ?? null;
+    // Use custom URL if provided, otherwise fall back to alert id
+    $idUrl = $customUrl ?? ($alertRow['id'] ?? null);
     $click = null;
     if (is_string($idUrl) && preg_match('#^https?://#i', $idUrl)) {
       $click = $idUrl;

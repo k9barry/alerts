@@ -19,8 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Removed duplicate comment in Config.php
+- Ensured ntfy notifications are properly logged in sent alerts
 
 ### Changed
+- Alert URLs now link to user-facing forecast pages using zone coordinates
+- Notification logging now records per-user, per-channel results; supports multiple users per alert
 - Improved code quality and documentation
 - Enhanced type safety across the codebase
 - **Updated zones table UNIQUE constraint** from `(STATE, ZONE)` to `(STATE, ZONE, STATE_ZONE)` to allow both C and Z variants
