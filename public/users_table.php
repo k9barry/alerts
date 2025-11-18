@@ -375,6 +375,8 @@ if ($requestUri === '/api/test-alert' && $method === 'POST') {
         // Generate MapClick URL with zone coordinates if available
         // Use first value from same_array, or if empty, first value from ugc_array
         $alertUrl = null;
+        $urlSource = 'none';
+        
         if (isset($testAlert['same_array']) || isset($testAlert['ugc_array'])) {
             $sameArray = json_decode($testAlert['same_array'] ?? '[]', true) ?: [];
             $ugcArray = json_decode($testAlert['ugc_array'] ?? '[]', true) ?: [];
@@ -408,14 +410,56 @@ if ($requestUri === '/api/test-alert' && $method === 'POST') {
                             $coords['lat'],
                             $coords['lon']
                         );
+                        $urlSource = 'zones_table';
                     }
                 }
             }
         }
         
-        // Fall back to alert ID if it's a valid URL and we don't have coordinates
+        // Fallback 1: Try to extract coordinates from alert geometry (if alert has json field)
+        if ($alertUrl === null && isset($testAlert['json'])) {
+            $alertData = json_decode($testAlert['json'], true);
+            if (is_array($alertData)) {
+                $geometry = $alertData['geometry'] ?? null;
+                if ($geometry && is_array($geometry)) {
+                    $coordinates = $geometry['coordinates'] ?? null;
+                    if (is_array($coordinates) && !empty($coordinates)) {
+                        // Extract first coordinate pair from nested geometry structure
+                        $findFirstCoordPair = function($data) use (&$findFirstCoordPair) {
+                            if (!is_array($data)) return null;
+                            // Check if this looks like a coordinate pair [lon, lat]
+                            if (count($data) >= 2 && is_numeric($data[0]) && is_numeric($data[1])) {
+                                return $data;
+                            }
+                            // Otherwise recurse into nested arrays
+                            foreach ($data as $item) {
+                                if (is_array($item)) {
+                                    $result = $findFirstCoordPair($item);
+                                    if ($result !== null) return $result;
+                                }
+                            }
+                            return null;
+                        };
+                        
+                        $firstPair = $findFirstCoordPair($coordinates);
+                        if ($firstPair !== null && count($firstPair) >= 2) {
+                            // GeoJSON format is [longitude, latitude]
+                            $alertUrl = sprintf(
+                                'https://forecast.weather.gov/MapClick.php?lat=%s&lon=%s&lg=english&FcstType=graphical&menu=1',
+                                (float)$firstPair[1],
+                                (float)$firstPair[0]
+                            );
+                            $urlSource = 'alert_geometry';
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Fallback 2: Use alert ID if it's a valid URL and we don't have coordinates
         if ($alertUrl === null && isset($testAlert['id']) && is_string($testAlert['id']) && preg_match('#^https?://#i', $testAlert['id'])) {
             $alertUrl = $testAlert['id'];
+            $urlSource = 'api_url_fallback';
         }
         
         $results = [];
