@@ -311,8 +311,8 @@ if ($requestUri === '/api/test-alert' && $method === 'POST') {
             exit;
         }
         
-        // Fetch a random alert from incoming_alerts for testing
-        $stmt = $pdo->query("SELECT * FROM incoming_alerts ORDER BY RANDOM() LIMIT 1");
+        // Fetch a random alert from active_alerts for testing
+        $stmt = $pdo->query("SELECT * FROM active_alerts ORDER BY RANDOM() LIMIT 1");
         $testAlert = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if (!$testAlert) {
@@ -373,35 +373,42 @@ if ($requestUri === '/api/test-alert' && $method === 'POST') {
         $message .= "\n{$description}\n";
         
         // Generate MapClick URL with zone coordinates if available
+        // Use first value from same_array, or if empty, first value from ugc_array
         $alertUrl = null;
         if (isset($testAlert['same_array']) || isset($testAlert['ugc_array'])) {
             $sameArray = json_decode($testAlert['same_array'] ?? '[]', true) ?: [];
             $ugcArray = json_decode($testAlert['ugc_array'] ?? '[]', true) ?: [];
-            $alertIds = [];
-            foreach (array_merge($sameArray, $ugcArray) as $v) {
-                if (is_null($v)) continue;
-                if (is_int($v) || (is_string($v) && preg_match('/^[0-9]+$/', $v))) {
-                    $alertIds[] = (string)$v;
-                } elseif (is_string($v) && trim($v) !== '') {
-                    $v = trim($v);
-                    if (preg_match('/^[a-z]{2,3}c?\d+$/i', $v)) {
-                        $alertIds[] = strtoupper($v);
-                    } else {
-                        $alertIds[] = $v;
+            
+            // Get the first non-empty value from same_array, or fall back to ugc_array
+            $firstZoneValue = null;
+            if (!empty($sameArray) && isset($sameArray[0])) {
+                $firstZoneValue = $sameArray[0];
+            } elseif (!empty($ugcArray) && isset($ugcArray[0])) {
+                $firstZoneValue = $ugcArray[0];
+            }
+            
+            if ($firstZoneValue !== null) {
+                // Normalize the zone value for lookup
+                $zoneId = null;
+                if (is_int($firstZoneValue) || (is_string($firstZoneValue) && preg_match('/^[0-9]+$/', $firstZoneValue))) {
+                    $zoneId = (string)$firstZoneValue;
+                } elseif (is_string($firstZoneValue) && trim($firstZoneValue) !== '') {
+                    $zoneId = trim($firstZoneValue);
+                    if (preg_match('/^[a-z]{2,3}c?\d+$/i', $zoneId)) {
+                        $zoneId = strtoupper($zoneId);
                     }
                 }
-            }
-            $alertIds = array_values(array_unique($alertIds));
-            
-            if (!empty($alertIds)) {
-                $alertsRepo = new \App\Repository\AlertsRepository();
-                $coords = $alertsRepo->getZoneCoordinates($alertIds);
-                if ($coords['lat'] !== null && $coords['lon'] !== null) {
-                    $alertUrl = sprintf(
-                        'https://forecast.weather.gov/MapClick.php?lat=%s&lon=%s&lg=english&FcstType=graphical&menu=1',
-                        $coords['lat'],
-                        $coords['lon']
-                    );
+                
+                if ($zoneId !== null) {
+                    $alertsRepo = new \App\Repository\AlertsRepository();
+                    $coords = $alertsRepo->getZoneCoordinates([$zoneId]);
+                    if ($coords['lat'] !== null && $coords['lon'] !== null) {
+                        $alertUrl = sprintf(
+                            'https://forecast.weather.gov/MapClick.php?lat=%s&lon=%s&lg=english&FcstType=graphical&menu=1',
+                            $coords['lat'],
+                            $coords['lon']
+                        );
+                    }
                 }
             }
         }
