@@ -390,12 +390,12 @@ if ($requestUri === '/api/test-alert' && $method === 'POST') {
             if ($firstZoneValue !== null) {
                 // Normalize the zone value for lookup
                 $zoneId = null;
-                if (is_int($firstZoneValue) || (is_string($firstZoneValue) && preg_match('/^[0-9]+$/', $firstZoneValue))) {
+                if (is_int($firstZoneValue) || (is_string($firstZoneValue) && ctype_digit($firstZoneValue))) {
                     $zoneId = (string)$firstZoneValue;
-                } elseif (is_string($firstZoneValue) && trim($firstZoneValue) !== '') {
-                    $zoneId = trim($firstZoneValue);
-                    if (preg_match('/^[a-z]{2,3}c?\d+$/i', $zoneId)) {
-                        $zoneId = strtoupper($zoneId);
+                } elseif (is_string($firstZoneValue)) {
+                    $trimmedValue = trim($firstZoneValue);
+                    if (preg_match('/^[a-z]{2,3}c?\d+$/i', $trimmedValue)) {
+                        $zoneId = strtoupper($trimmedValue);
                     }
                 }
                 
