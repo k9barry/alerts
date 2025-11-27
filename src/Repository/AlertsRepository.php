@@ -313,6 +313,11 @@ final class AlertsRepository
    * Get the first matching zone's LAT and LON coordinates for a list of zone identifiers.
    * Searches zones table for matching STATE_ZONE, ZONE, or FIPS values.
    * 
+   * Zone IDs are validated against expected patterns before querying:
+   * - STATE_ZONE format: 2-3 letter state code followed by optional 'C' and digits (e.g., INC040, INZ040)
+   * - FIPS codes: 5-6 digit numeric strings (e.g., 018033)
+   * - ZONE: alphanumeric identifiers
+   * 
    * @param array $zoneIds Array of zone identifiers (e.g., ["INZ040", "INC040", "018033"])
    * @return array{lat: float|null, lon: float|null} Coordinates or nulls if no match found
    */
@@ -330,6 +335,15 @@ final class AlertsRepository
     foreach ($zoneIds as $idx => $zoneId) {
       $zoneId = trim((string)$zoneId);
       if ($zoneId === '') continue;
+      
+      // Validate zone ID format to prevent injection attacks
+      // Valid formats:
+      // - STATE_ZONE: 2-3 letters, optional 'C', followed by 1-4 digits (e.g., INC040, INZ040, OHC001)
+      // - FIPS: 5-6 digit numeric string (e.g., 018033, 39001)
+      // - Zone code: alphanumeric up to 10 characters
+      if (!$this->isValidZoneId($zoneId)) {
+        continue; // Skip invalid zone IDs silently
+      }
       
       $paramName = ':zone' . $idx;
       $params[$paramName] = $zoneId;
@@ -360,6 +374,32 @@ final class AlertsRepository
     }
     
     return ['lat' => null, 'lon' => null];
+  }
+
+  /**
+   * Validate a zone ID to ensure it matches expected patterns.
+   * 
+   * Valid zone ID formats:
+   * - STATE_ZONE: 2-3 letter state code followed by optional 'C' or 'Z' and 1-4 digits (e.g., INC040, INZ040)
+   * - FIPS codes: 5-6 digit numeric strings (e.g., 018033, 39001)
+   * - Zone identifiers: alphanumeric strings up to 10 characters
+   * 
+   * @param string $zoneId Zone identifier to validate
+   * @return bool True if valid, false otherwise
+   */
+  private function isValidZoneId(string $zoneId): bool
+  {
+    // Maximum reasonable length for a zone ID
+    if (strlen($zoneId) > 10) {
+      return false;
+    }
+    
+    // Must be alphanumeric characters only (no special characters that could be used for injection)
+    if (!preg_match('/^[A-Za-z0-9]+$/', $zoneId)) {
+      return false;
+    }
+    
+    return true;
   }
 }
 
