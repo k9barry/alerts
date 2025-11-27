@@ -409,9 +409,6 @@ final class AlertsRepository
     }
 
     // Optionally enforce STATE_ZONE-like pattern: 2–3 letters, optional 'C', then 1–4 digits
-    }
-
-    // Alphanumeric only
     if (!preg_match('/^[A-Za-z0-9]+$/', $zoneId)) {
       return false;
     }
