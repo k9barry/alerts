@@ -313,6 +313,11 @@ final class AlertsRepository
    * Get the first matching zone's LAT and LON coordinates for a list of zone identifiers.
    * Searches zones table for matching STATE_ZONE, ZONE, or FIPS values.
    * 
+   * Zone IDs are validated before querying to ensure they are safe:
+   * - Must contain only alphanumeric characters (A-Z, a-z, 0-9)
+   * - Maximum length of 10 characters
+   * Invalid zone IDs are silently skipped.
+   * 
    * @param array $zoneIds Array of zone identifiers (e.g., ["INZ040", "INC040", "018033"])
    * @return array{lat: float|null, lon: float|null} Coordinates or nulls if no match found
    */
@@ -330,6 +335,15 @@ final class AlertsRepository
     foreach ($zoneIds as $idx => $zoneId) {
       $zoneId = trim((string)$zoneId);
       if ($zoneId === '') continue;
+      
+      // Validate zone ID format to prevent injection attacks
+      // Valid formats:
+      // - STATE_ZONE: 2-3 letters, optional 'C', followed by 1-4 digits (e.g., INC040, INZ040, OHC001)
+      // - FIPS: 5-6 digit numeric string (e.g., 018033, 39001)
+      // - Zone code: alphanumeric up to 10 characters
+      if (!$this->isValidZoneId($zoneId)) {
+        continue; // Skip invalid zone IDs silently
+      }
       
       $paramName = ':zone' . $idx;
       $params[$paramName] = $zoneId;
@@ -360,6 +374,62 @@ final class AlertsRepository
     }
     
     return ['lat' => null, 'lon' => null];
+  }
+
+  /**
+   * Validate a zone ID to ensure it is safe for database queries.
+   * 
+   * This validation ensures zone IDs are:
+   * - Alphanumeric characters only (letters A-Z, a-z and digits 0-9)
+   * - Maximum 10 characters in length
+   * 
+   * This covers common zone ID formats including:
+   * - STATE_ZONE: e.g., INC040, INZ040, OHC001
+   * - FIPS codes: e.g., 018033, 39001
+   * - Zone identifiers: e.g., Z040, C001
+   * 
+   * @param string $zoneId Zone identifier to validate
+   * @return bool True if valid, false otherwise
+   */
+  private function isValidZoneId(string $zoneId): bool
+  {
+    // Maximum reasonable length for a zone ID
+    if (strlen($zoneId) > 10) {
+      return false;
+    }
+
+    // Alphanumeric only
+    if (!preg_match('/^[A-Za-z0-9]+$/', $zoneId)) {
+      return false;
+    }
+
+    // If numeric-only, treat as FIPS: must be 5 or 6 digits
+    if (ctype_digit($zoneId)) {
+      return (strlen($zoneId) === 5 || strlen($zoneId) === 6);
+    }
+
+    // Optionally enforce STATE_ZONE-like pattern: 2–3 letters, optional 'C', then 1–4 digits
+    }
+
+    // Alphanumeric only
+    if (!preg_match('/^[A-Za-z0-9]+$/', $zoneId)) {
+      return false;
+    }
+
+    // If numeric-only, treat as FIPS: must be 5 or 6 digits
+    if (ctype_digit($zoneId)) {
+      return (strlen($zoneId) === 5 || strlen($zoneId) === 6);
+    }
+
+    // Optionally enforce STATE_ZONE-like pattern: 2–3 letters, optional 'C', then 1–4 digits
+    // while still allowing other simple alphanumeric IDs up to length 10
+    // If it matches a stricter known pattern, accept
+    if (preg_match('/^[A-Za-z]{2,3}C?\d{1,4}$/i', $zoneId)) {
+      return true;
+    }
+
+    // Otherwise, allow generic alphanumeric up to 10 chars
+    return true;
   }
 }
 

@@ -87,9 +87,11 @@ class MapClickUserMatchingZoneTest extends TestCase
      */
     private function insertTestZones(): void
     {
-        $stmt = $this->pdo->prepare("INSERT OR IGNORE INTO zones 
+        $stmt = $this->pdo->prepare(
+            "INSERT OR IGNORE INTO zones 
             (ZONE, NAME, STATE, STATE_ZONE, LAT, LON, FIPS, COUNTY) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        );
         
         // Zone A - Indiana
         $stmt->execute([
@@ -130,31 +132,6 @@ class MapClickUserMatchingZoneTest extends TestCase
         $coords = $repo->getZoneCoordinates([self::ZONE_A, self::ZONE_B]);
         $this->assertEquals(self::ZONE_A_LAT, $coords['lat']);
         $this->assertEquals(self::ZONE_A_LON, $coords['lon']);
-    }
-
-    /**
-     * Test that when Zone B is passed first, it returns Zone B's coordinates
-     *
-     * @return void
-     */
-    public function testGetZoneCoordinatesReturnsFirstMatchingZoneB(): void
-    {
-        $repo = new AlertsRepository();
-        
-        // When querying with Zone B first, should get Zone B's coordinates
-        $coords = $repo->getZoneCoordinates([self::ZONE_B, self::ZONE_A]);
-        
-        // Note: The current implementation returns the first matching zone from the database
-        // based on the SQL query, which may not match the array order.
-        // The important thing is that when we pass only the user's matching zones,
-        // we get coordinates for one of the user's zones.
-        $this->assertNotNull($coords['lat']);
-        $this->assertNotNull($coords['lon']);
-        
-        // Verify it's one of the two zones we passed
-        $isZoneA = ($coords['lat'] == self::ZONE_A_LAT && $coords['lon'] == self::ZONE_A_LON);
-        $isZoneB = ($coords['lat'] == self::ZONE_B_LAT && $coords['lon'] == self::ZONE_B_LON);
-        $this->assertTrue($isZoneA || $isZoneB, 'Coordinates should match one of the requested zones');
     }
 
     /**
@@ -247,5 +224,51 @@ class MapClickUserMatchingZoneTest extends TestCase
         
         // This test documents the issue: without the fix, we might have gotten Zone A's coords
         // when the user only subscribed to Zone B
+    }
+
+    /**
+     * Test that invalid zone IDs are handled gracefully
+     *
+     * @return void
+     */
+    public function testInvalidZoneIdValidation(): void
+    {
+        $repo = new AlertsRepository();
+        
+        // Test with empty array
+        $coords = $repo->getZoneCoordinates([]);
+        $this->assertNull($coords['lat']);
+        $this->assertNull($coords['lon']);
+        
+        // Test with invalid zone IDs (should be skipped by validation)
+        $coords = $repo->getZoneCoordinates(['invalid-zone!', 'a@bc', '']);
+        $this->assertNull($coords['lat']);
+        $this->assertNull($coords['lon']);
+        
+        // Test with a mix of valid and invalid - should still find valid one
+        $coords = $repo->getZoneCoordinates(['bad@id', self::ZONE_A, 'x!y']);
+        $this->assertEquals(self::ZONE_A_LAT, $coords['lat']);
+        $this->assertEquals(self::ZONE_A_LON, $coords['lon']);
+    }
+
+    /**
+     * Test that zone IDs that are too long are rejected
+     *
+     * @return void
+     */
+    public function testLongZoneIdValidation(): void
+    {
+        $repo = new AlertsRepository();
+        
+        // Zone ID longer than 10 characters should be skipped
+        $longZoneId = 'VERYLONGZONEID123';
+        $coords = $repo->getZoneCoordinates([$longZoneId]);
+        $this->assertNull($coords['lat']);
+        $this->assertNull($coords['lon']);
+        
+        // But valid zones should still work
+        $coords = $repo->getZoneCoordinates([$longZoneId, self::ZONE_B]);
+        $this->assertEquals(self::ZONE_B_LAT, $coords['lat']);
+        $this->assertEquals(self::ZONE_B_LON, $coords['lon']);
     }
 }

@@ -113,14 +113,40 @@ final class AlertProcessor
           foreach ($users as $u) {
             $userZoneIds = $this->parseUserZoneAlert($u['ZoneAlert'] ?? '[]');
             // If user has no zones configured, skip them (don't send all alerts)
-            if (empty($userZoneIds)) continue;
+            if (empty($userZoneIds)) {
+              LoggerFactory::get()->debug('Skipping user with no zones configured', [
+                'user_idx' => $u['idx'] ?? null,
+                'alert_id' => $p['id'] ?? null,
+              ]);
+              continue;
+            }
             // If alert doesn't match any of user's zones, skip this user
             $matchingZones = array_values(array_intersect($alertIds, $userZoneIds));
-            if (empty($matchingZones)) continue;
+            if (empty($matchingZones)) {
+              LoggerFactory::get()->debug('Skipping user - alert zones do not match user zones', [
+                'user_idx' => $u['idx'] ?? null,
+                'alert_id' => $p['id'] ?? null,
+                'alert_zones' => $alertIds,
+                'user_zones' => $userZoneIds,
+              ]);
+              continue;
+            }
             $anyMatch = true;
 
             // Get zone coordinates using the user's matching zones (not all alert zones)
             $coords = $this->alerts->getZoneCoordinates($matchingZones);
+            
+            // Validate coordinates structure from getZoneCoordinates
+            if (!is_array($coords) || !array_key_exists('lat', $coords) || !array_key_exists('lon', $coords)) {
+              LoggerFactory::get()->warning('getZoneCoordinates returned invalid structure', [
+                'alert_id' => $p['id'] ?? null,
+                'user_idx' => $u['idx'] ?? null,
+                'matching_zones' => $matchingZones,
+                'coords_result' => $coords,
+              ]);
+              $coords = ['lat' => null, 'lon' => null];
+            }
+            
             $detailsUrl = null;
             $urlSource = 'none';
             
