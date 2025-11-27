@@ -409,6 +409,19 @@ final class AlertsRepository
     }
 
     // Optionally enforce STATE_ZONE-like pattern: 2–3 letters, optional 'C', then 1–4 digits
+    }
+
+    // Alphanumeric only
+    if (!preg_match('/^[A-Za-z0-9]+$/', $zoneId)) {
+      return false;
+    }
+
+    // If numeric-only, treat as FIPS: must be 5 or 6 digits
+    if (ctype_digit($zoneId)) {
+      return (strlen($zoneId) === 5 || strlen($zoneId) === 6);
+    }
+
+    // Optionally enforce STATE_ZONE-like pattern: 2–3 letters, optional 'C', then 1–4 digits
     // while still allowing other simple alphanumeric IDs up to length 10
     // If it matches a stricter known pattern, accept
     if (preg_match('/^[A-Za-z]{2,3}C?\d{1,4}$/i', $zoneId)) {
