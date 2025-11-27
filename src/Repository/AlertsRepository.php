@@ -313,10 +313,10 @@ final class AlertsRepository
    * Get the first matching zone's LAT and LON coordinates for a list of zone identifiers.
    * Searches zones table for matching STATE_ZONE, ZONE, or FIPS values.
    * 
-   * Zone IDs are validated against expected patterns before querying:
-   * - STATE_ZONE format: 2-3 letter state code followed by optional 'C' and digits (e.g., INC040, INZ040)
-   * - FIPS codes: 5-6 digit numeric strings (e.g., 018033)
-   * - ZONE: alphanumeric identifiers
+   * Zone IDs are validated before querying to ensure they are safe:
+   * - Must contain only alphanumeric characters (A-Z, a-z, 0-9)
+   * - Maximum length of 10 characters
+   * Invalid zone IDs are silently skipped.
    * 
    * @param array $zoneIds Array of zone identifiers (e.g., ["INZ040", "INC040", "018033"])
    * @return array{lat: float|null, lon: float|null} Coordinates or nulls if no match found
@@ -377,12 +377,16 @@ final class AlertsRepository
   }
 
   /**
-   * Validate a zone ID to ensure it matches expected patterns.
+   * Validate a zone ID to ensure it is safe for database queries.
    * 
-   * Valid zone ID formats:
-   * - STATE_ZONE: 2-3 letter state code followed by optional 'C' or 'Z' and 1-4 digits (e.g., INC040, INZ040)
-   * - FIPS codes: 5-6 digit numeric strings (e.g., 018033, 39001)
-   * - Zone identifiers: alphanumeric strings up to 10 characters
+   * This validation ensures zone IDs are:
+   * - Alphanumeric characters only (letters A-Z, a-z and digits 0-9)
+   * - Maximum 10 characters in length
+   * 
+   * This covers common zone ID formats including:
+   * - STATE_ZONE: e.g., INC040, INZ040, OHC001
+   * - FIPS codes: e.g., 018033, 39001
+   * - Zone identifiers: e.g., Z040, C001
    * 
    * @param string $zoneId Zone identifier to validate
    * @return bool True if valid, false otherwise

@@ -87,9 +87,11 @@ class MapClickUserMatchingZoneTest extends TestCase
      */
     private function insertTestZones(): void
     {
-        $stmt = $this->pdo->prepare("INSERT OR IGNORE INTO zones 
+        $stmt = $this->pdo->prepare(
+            "INSERT OR IGNORE INTO zones 
             (ZONE, NAME, STATE, STATE_ZONE, LAT, LON, FIPS, COUNTY) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        );
         
         // Zone A - Indiana
         $stmt->execute([
