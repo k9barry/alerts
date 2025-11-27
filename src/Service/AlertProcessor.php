@@ -115,11 +115,12 @@ final class AlertProcessor
             // If user has no zones configured, skip them (don't send all alerts)
             if (empty($userZoneIds)) continue;
             // If alert doesn't match any of user's zones, skip this user
-            if (empty(array_intersect($alertIds, $userZoneIds))) continue;
+            $matchingZones = array_values(array_intersect($alertIds, $userZoneIds));
+            if (empty($matchingZones)) continue;
             $anyMatch = true;
 
-            // Get zone coordinates for the alert (use first matching zone)
-            $coords = $this->alerts->getZoneCoordinates($alertIds);
+            // Get zone coordinates using the user's matching zones (not all alert zones)
+            $coords = $this->alerts->getZoneCoordinates($matchingZones);
             $detailsUrl = null;
             $urlSource = 'none';
             
@@ -134,6 +135,7 @@ final class AlertProcessor
               LoggerFactory::get()->info('MapClick URL built from zones table', [
                 'alert_id' => $p['id'] ?? null,
                 'user_idx' => $u['idx'] ?? null,
+                'matching_zones' => $matchingZones,
                 'lat' => $coords['lat'],
                 'lon' => $coords['lon'],
                 'url' => $detailsUrl,
