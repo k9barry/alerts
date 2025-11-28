@@ -9,6 +9,7 @@
 /.idea/
 /.vscode/
 *.iml
+.pr_*
 
 # Logs
 /logs/
