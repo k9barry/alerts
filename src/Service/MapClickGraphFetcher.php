@@ -141,7 +141,7 @@ final class MapClickGraphFetcher
         //   gset: graph set (18 is comprehensive)
         //   gdiff: graph difference
         //   hour: forecast hours to display (48 hours)
-        //   pop, temp, sky, rain, snow, ice, wx, wspd, wgust, rh, dp, app, vis: weather elements to show
+        //   pop, temp, sky, rain, snow, fzra, sleet, wspd, wdir, rh: weather elements to show
         $params = [
             'lat' => number_format($lat, 4, '.', ''),
             'lon' => number_format($lon, 4, '.', ''),
