@@ -208,6 +208,7 @@ final class PushoverNotifier
      */
     private function sendWithAttachment(array $body, array $imageData): \Psr\Http\Message\ResponseInterface
     {
+      $this->pace();
       // Build multipart array
       $multipart = [];
       foreach ($body as $key => $value) {
