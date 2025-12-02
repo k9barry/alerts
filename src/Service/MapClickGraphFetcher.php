@@ -263,12 +263,20 @@ final class MapClickGraphFetcher
     public function extractCoordsFromUrl(string $url): ?array
     {
         // Match lat and lon parameters in URL
-        if (preg_match('/[?&]lat=(-?[\d.]+)/i', $url, $latMatch) &&
-            preg_match('/[?&]lon=(-?[\d.]+)/i', $url, $lonMatch)) {
-            return [
-                'lat' => (float)$latMatch[1],
-                'lon' => (float)$lonMatch[1],
-            ];
+        if (preg_match('/[?&]lat=(-?[\d.]+)&.*lon=(-?[\d.]+)/i', $url, $matches) ||
+            preg_match('/[?&]lon=(-?[\d.]+)&.*lat=(-?[\d.]+)/i', $url, $matches_rev)) {
+            if (!empty($matches)) {
+                return [
+                    'lat' => (float)$matches[1],
+                    'lon' => (float)$matches[2],
+                ];
+            }
+            if (!empty($matches_rev)) {
+                return [
+                    'lat' => (float)$matches_rev[2],
+                    'lon' => (float)$matches_rev[1],
+                ];
+            }
         }
 
         return null;
