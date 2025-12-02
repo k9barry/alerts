@@ -119,9 +119,10 @@ final class PushoverNotifier
      * @param array $alertRow
      * @param array $userRow
      * @param string|null $customUrl Optional custom URL to use instead of alert id
+     * @param array{data:string,content_type:string}|null $imageData Optional image attachment
      * @return array
      */
-    public function notifyDetailedForUser(array $alertRow, array $userRow, ?string $customUrl = null): array
+    public function notifyDetailedForUser(array $alertRow, array $userRow, ?string $customUrl = null, ?array $imageData = null): array
     {
       $user = trim((string)($userRow['PushoverUser'] ?? $userRow['Pushoveruser'] ?? ''));
       $token = trim((string)($userRow['PushoverToken'] ?? $userRow['Pushovertoken'] ?? ''));
@@ -158,7 +159,12 @@ final class PushoverNotifier
         $attempts++;
         $this->pace();
         try {
-          $resp = $this->client->post(Config::$pushoverApiUrl, ['form_params' => $body]);
+          // Use multipart if we have an image attachment
+          if ($imageData !== null && !empty($imageData['data'])) {
+            $resp = $this->sendWithAttachment($body, $imageData);
+          } else {
+            $resp = $this->client->post(Config::$pushoverApiUrl, ['form_params' => $body]);
+          }
           $ok = $resp->getStatusCode() === 200;
           if (!$ok) {
             $statusCode = $resp->getStatusCode();
@@ -182,6 +188,7 @@ final class PushoverNotifier
         'status' => $status,
         'attempts' => $attempts,
         'error' => $error,
+        'has_image' => $imageData !== null,
       ]);
 
       return [
@@ -190,6 +197,43 @@ final class PushoverNotifier
         'error' => $error,
         'request_id' => $requestId,
       ];
+    }
+
+    /**
+     * Send Pushover message with image attachment using multipart form.
+     *
+     * @param array $body Form parameters
+     * @param array{data:string,content_type:string} $imageData Image data
+     * @return \Psr\Http\Message\ResponseInterface Response from API
+     */
+    private function sendWithAttachment(array $body, array $imageData): \Psr\Http\Message\ResponseInterface
+    {
+      // Build multipart array
+      $multipart = [];
+      foreach ($body as $key => $value) {
+        $multipart[] = [
+          'name' => $key,
+          'contents' => (string)$value,
+        ];
+      }
+
+      // Add the image attachment
+      // Pushover expects the attachment field with the image content
+      $extension = match ($imageData['content_type']) {
+        'image/png' => 'png',
+        'image/jpeg', 'image/jpg' => 'jpg',
+        'image/gif' => 'gif',
+        default => 'png',
+      };
+      
+      $multipart[] = [
+        'name' => 'attachment',
+        'contents' => $imageData['data'],
+        'filename' => 'forecast.' . $extension,
+        'headers' => ['Content-Type' => $imageData['content_type']],
+      ];
+
+      return $this->client->post(Config::$pushoverApiUrl, ['multipart' => $multipart]);
     }
 
     /**

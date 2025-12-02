@@ -413,9 +413,10 @@ class NtfyNotifier
    * @param array $alertRow Row from alerts table (expected keys: json, id, event, headline, etc.)
    * @param array $userRow User row with optional NtfyTopic, NtfyToken, NtfyUser, NtfyPassword
    * @param string|null $customUrl Optional custom URL to use instead of alert id
+   * @param array{data:string,content_type:string}|null $imageData Optional image attachment
    * @return array{status:string,attempts:int,error:string|null}
    */
-  public function notifyDetailedForUser(array $alertRow, array $userRow, ?string $customUrl = null): array
+  public function notifyDetailedForUser(array $alertRow, array $userRow, ?string $customUrl = null, ?array $imageData = null): array
   {
     $userIdx = $userRow['idx'] ?? null;
     
@@ -484,7 +485,7 @@ class NtfyNotifier
     while ($attempts < 3 && !$ok) {
       $attempts++;
       try {
-        $headers = ['Content-Type' => 'text/plain; charset=utf-8'];
+        $headers = [];
         // prefer per-user token/user:password if provided
         if (!empty($userRow['NtfyToken'])) {
           $headers['Authorization'] = 'Bearer ' . trim((string)$userRow['NtfyToken']);
@@ -504,8 +505,18 @@ class NtfyNotifier
           $headers['X-Click'] = $click;
         }
 
-        // Enforce ntfy length limits: message<=4096
-        $body = substr($message, 0, 4096);
+        // If we have an image, attach it using ntfy's attachment feature
+        if ($imageData !== null && !empty($imageData['data'])) {
+          $headers['X-Filename'] = 'forecast.' . $this->getImageExtension($imageData['content_type']);
+          $headers['Content-Type'] = $imageData['content_type'];
+          // For ntfy with attachment, the message goes in header
+          $headers['X-Message'] = substr($message, 0, 4096);
+          $body = $imageData['data'];
+        } else {
+          $headers['Content-Type'] = 'text/plain; charset=utf-8';
+          // Enforce ntfy length limits: message<=4096
+          $body = substr($message, 0, 4096);
+        }
 
         $resp = $http->post($url, ['headers' => $headers, 'body' => $body]);
         $status = $resp->getStatusCode();
@@ -536,6 +547,7 @@ class NtfyNotifier
       'status' => $status,
       'attempts' => $attempts,
       'error' => $error,
+      'has_image' => $imageData !== null,
     ]);
 
     return [
@@ -543,6 +555,22 @@ class NtfyNotifier
       'attempts' => $attempts,
       'error' => $error,
     ];
+  }
+
+  /**
+   * Get file extension from content type.
+   *
+   * @param string $contentType MIME content type
+   * @return string File extension
+   */
+  private function getImageExtension(string $contentType): string
+  {
+    return match ($contentType) {
+      'image/png' => 'png',
+      'image/jpeg', 'image/jpg' => 'jpg',
+      'image/gif' => 'gif',
+      default => 'png',
+    };
   }
 
   /**

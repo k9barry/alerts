@@ -12,6 +12,7 @@ use DateTimeZone;
 use Throwable;
 use App\Service\MessageBuilderTrait;
 use App\Service\NtfyNotifier;
+use App\Service\MapClickGraphFetcher;
 
 use App\Service\PushoverNotifier;
 
@@ -23,6 +24,7 @@ use App\Service\PushoverNotifier;
  * Responsibilities:
  * - Diff fetched alerts against stored alerts and queue new ones
  * - Process pending alerts and dispatch notifications via Pushover and ntfy
+ * - Optionally attach meteogram graph images to notifications
  */
 final class AlertProcessor
 {
@@ -31,6 +33,7 @@ final class AlertProcessor
   private AlertsRepository $alerts;
   private PushoverNotifier $pushover;
   private ?NtfyNotifier $ntfy = null;
+  private ?MapClickGraphFetcher $graphFetcher = null;
 
     /**
      * AlertProcessor constructor.
@@ -53,6 +56,12 @@ final class AlertProcessor
           'ntfy_topic' => Config::$ntfyTopic,
           'ntfy_base' => Config::$ntfyBaseUrl,
         ]);
+      }
+
+      // Initialize graph fetcher if enabled
+      if (Config::$attachGraphImage) {
+        $this->graphFetcher = new MapClickGraphFetcher();
+        LoggerFactory::get()->info('Graph image attachment enabled');
       }
     }
 
@@ -197,6 +206,19 @@ final class AlertProcessor
               }
             }
 
+            // Fetch graph image if enabled and we have coordinates
+            $graphImage = null;
+            if ($this->graphFetcher !== null && $detailsUrl !== null) {
+              $graphImage = $this->graphFetcher->fetchFromMapClickUrl($detailsUrl);
+              if ($graphImage !== null) {
+                LoggerFactory::get()->info('Meteogram graph image fetched', [
+                  'alert_id' => $p['id'] ?? null,
+                  'user_idx' => $u['idx'] ?? null,
+                  'image_size' => strlen($graphImage['data']),
+                ]);
+              }
+            }
+
             // send per-user notifications using their credentials
             $channels = [];
             $pushoverReqId = null;
@@ -206,8 +228,9 @@ final class AlertProcessor
                 'user_idx' => $u['idx'] ?? null,
                 'details_url' => $detailsUrl,
                 'url_source' => $urlSource,
+                'has_graph_image' => $graphImage !== null,
               ]);
-              $res = $this->pushover->notifyDetailedForUser($p, $u, $detailsUrl);
+              $res = $this->pushover->notifyDetailedForUser($p, $u, $detailsUrl, $graphImage);
               $channels[] = ['channel' => 'pushover', 'result' => $res];
               $pushoverReqId = $res['request_id'] ?? null;
             }
@@ -218,9 +241,10 @@ final class AlertProcessor
                 'user_idx' => $u['idx'] ?? null,
                 'details_url' => $detailsUrl,
                 'url_source' => $urlSource,
+                'has_graph_image' => $graphImage !== null,
               ]);
               // use per-user send which prefers user's NtfyToken/NtfyUser+Password and NtfyTopic
-              $ntfyRes = $this->ntfy->notifyDetailedForUser($p, $u, $detailsUrl);
+              $ntfyRes = $this->ntfy->notifyDetailedForUser($p, $u, $detailsUrl, $graphImage);
               $channels[] = ['channel' => 'ntfy', 'result' => $ntfyRes];
             }
 

@@ -91,6 +91,9 @@ final class Config
   /** @var string IANA timezone identifier for timestamp localization */
   public static string $timezone;
 
+  /** @var bool Enable attaching meteogram graph image to notifications */
+  public static bool $attachGraphImage;
+
     /**
      * Initialize configuration from environment variables
      * 
@@ -146,6 +149,9 @@ final class Config
       }
 
       self::$timezone = (string)(self::env('TIMEZONE', 'America/Indianapolis'));
+
+      // Graph image attachment feature
+      self::$attachGraphImage = filter_var(self::env('ATTACH_GRAPH_IMAGE', 'false'), FILTER_VALIDATE_BOOLEAN);
     }
 
   /**
