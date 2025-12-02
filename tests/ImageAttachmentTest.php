@@ -304,4 +304,3 @@ class ImageAttachmentTest extends TestCase
         $this->assertStringContainsString('jpg', $call['opts']['headers']['X-Filename']);
     }
 }
-
