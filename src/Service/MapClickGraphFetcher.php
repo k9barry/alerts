@@ -150,7 +150,7 @@ final class MapClickGraphFetcher
             'gset' => '18',
             'gdiff' => '3',
             'unit' => '0',
-            'tession' => time(),
+            'session' => time(),
             'hour' => '48',
             'pop' => '1',
             'temp' => '1',
