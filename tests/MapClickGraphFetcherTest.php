@@ -29,6 +29,9 @@ class MapClickGraphFetcherTest extends TestCase
         $this->assertStringContainsString('lat=40.1616', $url);
         $this->assertStringContainsString('lon=-85.7194', $url);
         $this->assertStringContainsString('wfo=ALL', $url);
+        // Check that the URL includes weather display parameters
+        $this->assertStringContainsString('hour=48', $url);
+        $this->assertStringContainsString('temp=1', $url);
     }
 
     /**

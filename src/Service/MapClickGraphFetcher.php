@@ -59,17 +59,34 @@ final class MapClickGraphFetcher
     public function buildMeteogramUrl(float $lat, float $lon): string
     {
         // The Plotter.php endpoint generates PNG meteogram images
-        // Parameters:
+        // Full parameter list based on NWS hourly weather graph format:
         //   lat, lon: coordinates
-        //   wfo: Weather Forecast Office (ALL means auto-detect)
-        //   zcode: zone code (optional, we skip it for simplicity)
-        //   gession: cache-busting session ID
+        //   wfo: Weather Forecast Office (ALL for auto-detect is not reliable, but we'll try)
+        //   zcode: zone code (ALL for auto-detect)
+        //   gset: graph set (18 is comprehensive)
+        //   gdiff: graph difference
+        //   hour: forecast hours to display (48 hours)
+        //   pop, temp, sky, rain, snow, ice, wx, wspd, wgust, rh, dp, app, vis: weather elements to show
         $params = [
             'lat' => number_format($lat, 4, '.', ''),
             'lon' => number_format($lon, 4, '.', ''),
             'wfo' => 'ALL',
             'zcode' => 'ALL',
-            'gession' => time(),
+            'gset' => '18',
+            'gdiff' => '3',
+            'unit' => '0',
+            'tession' => time(),
+            'hour' => '48',
+            'pop' => '1',
+            'temp' => '1',
+            'sky' => '1',
+            'rain' => '1',
+            'snow' => '1',
+            'fzra' => '1',
+            'sleet' => '1',
+            'wspd' => '1',
+            'wdir' => '1',
+            'rh' => '1',
         ];
 
         return self::METEOGRAM_BASE_URL . '?' . http_build_query($params);
