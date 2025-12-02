@@ -35,6 +35,56 @@ class MapClickGraphFetcherTest extends TestCase
     }
 
     /**
+     * Test building meteogram URL with specific WFO code.
+     */
+    public function testBuildMeteogramUrlWithWfoCode(): void
+    {
+        $fetcher = new MapClickGraphFetcher();
+        
+        $url = $fetcher->buildMeteogramUrl(40.1616, -85.7194, 'IND');
+        
+        $this->assertStringContainsString('wfo=IND', $url);
+    }
+
+    /**
+     * Test getting WFO code from NWS API.
+     */
+    public function testGetWfoCodeSuccess(): void
+    {
+        $mock = new MockHandler([
+            new Response(200, ['Content-Type' => 'application/json'], json_encode([
+                'properties' => ['gridId' => 'IND']
+            ])),
+        ]);
+        
+        $handlerStack = HandlerStack::create($mock);
+        $client = new Client(['handler' => $handlerStack]);
+        
+        $fetcher = new MapClickGraphFetcher($client);
+        $wfo = $fetcher->getWfoCode(40.1616, -85.7194);
+        
+        $this->assertEquals('IND', $wfo);
+    }
+
+    /**
+     * Test getting WFO code returns null on API error.
+     */
+    public function testGetWfoCodeReturnsNullOnError(): void
+    {
+        $mock = new MockHandler([
+            new Response(500, [], 'Internal Server Error'),
+        ]);
+        
+        $handlerStack = HandlerStack::create($mock);
+        $client = new Client(['handler' => $handlerStack]);
+        
+        $fetcher = new MapClickGraphFetcher($client);
+        $wfo = $fetcher->getWfoCode(40.1616, -85.7194);
+        
+        $this->assertNull($wfo);
+    }
+
+    /**
      * Test extracting coordinates from a MapClick URL.
      */
     public function testExtractCoordsFromValidUrl(): void
@@ -111,7 +161,13 @@ class MapClickGraphFetcherTest extends TestCase
         // Create a mock PNG image
         $pngData = $this->createFakePngData();
         
+        // Mock handler needs to handle both: 1) WFO API call, 2) Image fetch
         $mock = new MockHandler([
+            // First request: WFO lookup from NWS API
+            new Response(200, ['Content-Type' => 'application/json'], json_encode([
+                'properties' => ['gridId' => 'IND']
+            ])),
+            // Second request: Meteogram image
             new Response(200, ['Content-Type' => 'image/png'], $pngData),
         ]);
         
@@ -132,6 +188,9 @@ class MapClickGraphFetcherTest extends TestCase
     public function testFetchMeteogramImageReturnsNullOnHttpError(): void
     {
         $mock = new MockHandler([
+            // First request: WFO lookup fails
+            new Response(500, [], 'Internal Server Error'),
+            // Second request: Image fetch also fails
             new Response(500, [], 'Internal Server Error'),
         ]);
         
@@ -150,6 +209,11 @@ class MapClickGraphFetcherTest extends TestCase
     public function testFetchMeteogramImageReturnsNullForNonImageContentType(): void
     {
         $mock = new MockHandler([
+            // First request: WFO lookup succeeds
+            new Response(200, ['Content-Type' => 'application/json'], json_encode([
+                'properties' => ['gridId' => 'IND']
+            ])),
+            // Second request: Image fetch returns HTML error page
             new Response(200, ['Content-Type' => 'text/html'], '<html>Error page</html>'),
         ]);
         
@@ -168,6 +232,11 @@ class MapClickGraphFetcherTest extends TestCase
     public function testFetchMeteogramImageReturnsNullForSmallContent(): void
     {
         $mock = new MockHandler([
+            // First request: WFO lookup succeeds
+            new Response(200, ['Content-Type' => 'application/json'], json_encode([
+                'properties' => ['gridId' => 'IND']
+            ])),
+            // Second request: Image too small
             new Response(200, ['Content-Type' => 'image/png'], 'small'),
         ]);
         
@@ -188,6 +257,11 @@ class MapClickGraphFetcherTest extends TestCase
         $pngData = $this->createFakePngData();
         
         $mock = new MockHandler([
+            // First request: WFO lookup succeeds
+            new Response(200, ['Content-Type' => 'application/json'], json_encode([
+                'properties' => ['gridId' => 'IND']
+            ])),
+            // Second request: Meteogram image
             new Response(200, ['Content-Type' => 'image/png'], $pngData),
         ]);
         
@@ -222,6 +296,11 @@ class MapClickGraphFetcherTest extends TestCase
         $jpegData = $this->createFakeJpegData();
         
         $mock = new MockHandler([
+            // First request: WFO lookup succeeds
+            new Response(200, ['Content-Type' => 'application/json'], json_encode([
+                'properties' => ['gridId' => 'IND']
+            ])),
+            // Second request: JPEG image
             new Response(200, ['Content-Type' => 'image/jpeg; charset=binary'], $jpegData),
         ]);
         

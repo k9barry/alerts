@@ -17,7 +17,10 @@ use Throwable;
  * The meteogram is a graphical forecast showing weather conditions over time.
  *
  * The NWS provides a Plotter.php endpoint that generates meteogram images directly:
- * https://forecast.weather.gov/meteograms/Plotter.php?lat={lat}&lon={lon}&wfo=ALL&zcode={zone}&gession=...
+ * https://forecast.weather.gov/meteograms/Plotter.php?lat={lat}&lon={lon}&wfo={wfo}&...
+ *
+ * Note: To get the correct WFO (Weather Forecast Office) code, we first query
+ * the NWS API at api.weather.gov/points/{lat},{lon} to get the gridId.
  *
  * @package App\Service
  */
@@ -29,6 +32,11 @@ final class MapClickGraphFetcher
      * Base URL for the NWS meteogram plotter
      */
     private const METEOGRAM_BASE_URL = 'https://forecast.weather.gov/meteograms/Plotter.php';
+
+    /**
+     * Base URL for the NWS API to get WFO information
+     */
+    private const NWS_API_BASE_URL = 'https://api.weather.gov';
 
     public function __construct(?Client $client = null)
     {
@@ -42,9 +50,75 @@ final class MapClickGraphFetcher
                     Config::$appVersion ?? '1.0.0',
                     Config::$contactEmail ?? 'weather@example.com'
                 ),
-                'Accept' => 'image/png, image/jpeg, image/gif, */*;q=0.8'
+                'Accept' => 'application/geo+json, application/json, image/png, image/jpeg, image/gif, */*;q=0.8'
             ]
         ]);
+    }
+
+    /**
+     * Get the Weather Forecast Office (WFO) code for given coordinates.
+     *
+     * Queries the NWS API to get the gridId (WFO code) for a location.
+     *
+     * @param float $lat Latitude
+     * @param float $lon Longitude
+     * @return string|null WFO code or null on failure
+     */
+    public function getWfoCode(float $lat, float $lon): ?string
+    {
+        $url = sprintf(
+            '%s/points/%.4f,%.4f',
+            self::NWS_API_BASE_URL,
+            $lat,
+            $lon
+        );
+
+        try {
+            $resp = $this->client->get($url);
+            $status = $resp->getStatusCode();
+
+            if ($status !== 200) {
+                LoggerFactory::get()->warning('NWS API points request failed', [
+                    'status' => $status,
+                    'lat' => $lat,
+                    'lon' => $lon,
+                ]);
+                return null;
+            }
+
+            $body = (string)$resp->getBody();
+            $data = json_decode($body, true);
+
+            if (isset($data['properties']['gridId'])) {
+                $wfo = $data['properties']['gridId'];
+                LoggerFactory::get()->debug('Got WFO code from NWS API', [
+                    'wfo' => $wfo,
+                    'lat' => $lat,
+                    'lon' => $lon,
+                ]);
+                return $wfo;
+            }
+
+            LoggerFactory::get()->warning('No gridId in NWS API response', [
+                'lat' => $lat,
+                'lon' => $lon,
+            ]);
+            return null;
+        } catch (GuzzleException $e) {
+            LoggerFactory::get()->error('NWS API request error', [
+                'error' => $e->getMessage(),
+                'lat' => $lat,
+                'lon' => $lon,
+            ]);
+            return null;
+        } catch (Throwable $e) {
+            LoggerFactory::get()->error('Unexpected error getting WFO code', [
+                'error' => $e->getMessage(),
+                'lat' => $lat,
+                'lon' => $lon,
+            ]);
+            return null;
+        }
     }
 
     /**
@@ -54,14 +128,15 @@ final class MapClickGraphFetcher
      *
      * @param float $lat Latitude
      * @param float $lon Longitude
+     * @param string|null $wfo Optional WFO code (Weather Forecast Office)
      * @return string Meteogram URL
      */
-    public function buildMeteogramUrl(float $lat, float $lon): string
+    public function buildMeteogramUrl(float $lat, float $lon, ?string $wfo = null): string
     {
         // The Plotter.php endpoint generates PNG meteogram images
         // Full parameter list based on NWS hourly weather graph format:
         //   lat, lon: coordinates
-        //   wfo: Weather Forecast Office (ALL for auto-detect is not reliable, but we'll try)
+        //   wfo: Weather Forecast Office code (e.g., IND, OKX, SEW)
         //   zcode: zone code (ALL for auto-detect)
         //   gset: graph set (18 is comprehensive)
         //   gdiff: graph difference
@@ -70,7 +145,7 @@ final class MapClickGraphFetcher
         $params = [
             'lat' => number_format($lat, 4, '.', ''),
             'lon' => number_format($lon, 4, '.', ''),
-            'wfo' => 'ALL',
+            'wfo' => $wfo ?? 'ALL',
             'zcode' => 'ALL',
             'gset' => '18',
             'gdiff' => '3',
@@ -95,6 +170,7 @@ final class MapClickGraphFetcher
     /**
      * Fetch the meteogram image data for given coordinates.
      *
+     * First attempts to get the WFO code from the NWS API for better results.
      * Returns the raw image data (PNG) or null on failure.
      *
      * @param float $lat Latitude
@@ -103,7 +179,10 @@ final class MapClickGraphFetcher
      */
     public function fetchMeteogramImage(float $lat, float $lon): ?array
     {
-        $url = $this->buildMeteogramUrl($lat, $lon);
+        // First, try to get the WFO code for this location
+        $wfo = $this->getWfoCode($lat, $lon);
+        
+        $url = $this->buildMeteogramUrl($lat, $lon, $wfo);
 
         LoggerFactory::get()->debug('Fetching meteogram image', [
             'lat' => $lat,
