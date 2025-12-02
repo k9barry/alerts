@@ -36,6 +36,7 @@ A Dockerized PHP 8.3 application that monitors weather.gov alerts, stores them i
 - Customizable message format with severity, certainty, urgency, and time information
 - Local timezone conversion for alert timestamps
 - Clickable URLs linking directly to NWS alert details
+- **Optional Graph Image Attachment**: Fetch and attach the NWS meteogram (graphical forecast) image directly to notifications
 - Configurable notification pacing to avoid overwhelming users
 - Comprehensive error handling with retry logic
 - Simultaneous multi-channel delivery

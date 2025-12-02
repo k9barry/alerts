@@ -28,3 +28,5 @@ App\Config::$ntfyPassword = null;
 App\Config::$ntfyToken = null;
 App\Config::$ntfyTitlePrefix = 'TEST';
 App\Config::$timezone = 'UTC';
+App\Config::$attachGraphImage = false; // Disabled by default in tests
+App\Config::$zonesDataUrl = 'https://www.weather.gov/source/gis/Shapefiles/County/bp18mr25.dbx';
