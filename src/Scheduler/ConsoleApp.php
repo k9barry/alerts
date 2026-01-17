@@ -51,6 +51,63 @@ final class ConsoleApp
             }
         });
 
+        $app->add(new class('cleanup-old-sent-alerts') extends Command {
+            protected static $defaultName = 'cleanup-old-sent-alerts';
+            protected function execute(InputInterface $input, OutputInterface $output): int
+            {
+                // Cleanup sent_alerts records older than 30 days
+                $retentionDays = 30;
+                try {
+                    $db = \App\DB\Connection::get();
+                    $cutoffDate = date('Y-m-d H:i:s', strtotime("-{$retentionDays} days"));
+                    
+                    // Get count of records to be deleted
+                    $stmt = $db->prepare("SELECT COUNT(*) FROM sent_alerts WHERE notified_at < :cutoff");
+                    $stmt->execute([':cutoff' => $cutoffDate]);
+                    $count = $stmt->fetchColumn() ?: 0;
+                    unset($stmt);
+                    
+                    if ($count === 0) {
+                        LoggerFactory::get()->info('No old sent_alerts records to cleanup', [
+                            'retention_days' => $retentionDays,
+                            'cutoff_date' => $cutoffDate
+                        ]);
+                        return Command::SUCCESS;
+                    }
+                    
+                    LoggerFactory::get()->info('Starting cleanup of old sent_alerts records', [
+                        'retention_days' => $retentionDays,
+                        'cutoff_date' => $cutoffDate,
+                        'records_to_delete' => $count
+                    ]);
+                    
+                    // Delete old records
+                    $db->beginTransaction();
+                    try {
+                        $stmt = $db->prepare('DELETE FROM sent_alerts WHERE notified_at < :cutoff');
+                        $stmt->execute([':cutoff' => $cutoffDate]);
+                        $deletedCount = $stmt->rowCount();
+                        $db->commit();
+                    } catch (\Throwable $e) {
+                        $db->rollBack();
+                        throw $e;
+                    }
+                    
+                    LoggerFactory::get()->info('Deleted old sent_alerts records', [
+                        'records_deleted' => $deletedCount,
+                        'retention_days' => $retentionDays
+                    ]);
+                    
+                    return Command::SUCCESS;
+                } catch (\Throwable $e) {
+                    LoggerFactory::get()->error('cleanup-old-sent-alerts error', [
+                        'error' => $e->getMessage()
+                    ]);
+                    return Command::FAILURE;
+                }
+            }
+        });
+
         $app->add(new class('run-scheduler') extends Command {
             protected static $defaultName = 'run-scheduler';
             protected function execute(InputInterface $input, OutputInterface $output): int
@@ -84,6 +141,19 @@ final class ConsoleApp
                     }
 
                     if ((time() - $lastVacuum) >= $vacuumEvery) {
+                        // Run cleanup of old sent_alerts before VACUUM
+                        try {
+                            $app = $this->getApplication();
+                            if ($app) {
+                                $cmd = $app->find('cleanup-old-sent-alerts');
+                                if ($cmd) {
+                                    $cmd->run(new \Symfony\Component\Console\Input\ArrayInput([]), $output);
+                                }
+                            }
+                        } catch (\Throwable $e) {
+                            LoggerFactory::get()->error('cleanup-old-sent-alerts error', ['error' => $e->getMessage()]);
+                        }
+                        
                         try {
                             \App\DB\Connection::get()->exec('VACUUM');
                             LoggerFactory::get()->info('Database vacuum complete (scheduled)');

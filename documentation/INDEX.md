@@ -23,6 +23,7 @@ High-level system design and concepts:
 Executable PHP scripts:
 
 - [check_zones_data.php](./scripts/check_zones_data.md) - Automated zone data download during startup
+- [cleanup_old_sent_alerts.php](./scripts/cleanup_old_sent_alerts.md) - Cleanup old notification history
 - [migrate.php](./scripts/migrate.md) - Database migrations and schema management
 - [scheduler.php](./scripts/scheduler.md) - Continuous scheduler daemon
 - [oneshot_poll.php](./scripts/oneshot_poll.md) - Single poll cycle execution
