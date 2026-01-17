@@ -61,10 +61,15 @@ try {
     
     // Delete old records
     $db->beginTransaction();
-    $stmt = $db->prepare('DELETE FROM sent_alerts WHERE notified_at < :cutoff');
-    $stmt->execute([':cutoff' => $cutoffDate]);
-    $deletedCount = $stmt->rowCount();
-    $db->commit();
+    try {
+        $stmt = $db->prepare('DELETE FROM sent_alerts WHERE notified_at < :cutoff');
+        $stmt->execute([':cutoff' => $cutoffDate]);
+        $deletedCount = $stmt->rowCount();
+        $db->commit();
+    } catch (\Throwable $e) {
+        $db->rollBack();
+        throw $e;
+    }
     
     $logger->info('Deleted old sent_alerts records', [
         'records_deleted' => $deletedCount,
@@ -81,6 +86,9 @@ try {
     echo "Cleanup successful.\n";
     
 } catch (Throwable $e) {
+    if ($db->inTransaction()) {
+        $db->rollBack();
+    }
     $logger->error('Cleanup failed', [
         'error' => $e->getMessage(),
         'trace' => $e->getTraceAsString()

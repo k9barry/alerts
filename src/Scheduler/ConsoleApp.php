@@ -83,10 +83,15 @@ final class ConsoleApp
                     
                     // Delete old records
                     $db->beginTransaction();
-                    $stmt = $db->prepare('DELETE FROM sent_alerts WHERE notified_at < :cutoff');
-                    $stmt->execute([':cutoff' => $cutoffDate]);
-                    $deletedCount = $stmt->rowCount();
-                    $db->commit();
+                    try {
+                        $stmt = $db->prepare('DELETE FROM sent_alerts WHERE notified_at < :cutoff');
+                        $stmt->execute([':cutoff' => $cutoffDate]);
+                        $deletedCount = $stmt->rowCount();
+                        $db->commit();
+                    } catch (\Throwable $e) {
+                        $db->rollBack();
+                        throw $e;
+                    }
                     
                     LoggerFactory::get()->info('Deleted old sent_alerts records', [
                         'records_deleted' => $deletedCount,
