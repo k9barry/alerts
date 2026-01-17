@@ -183,10 +183,10 @@ ORDER BY created_at ASC LIMIT 1;
 - **user_id** (INTEGER): Reserved for future multi-user support
 
 **Characteristics**:
-- Never deleted (permanent audit trail)
+- Permanent audit trail with automatic cleanup
 - One record per alert ID (INSERT OR REPLACE)
 - Contains full alert data plus notification metadata
-- Grows over time (periodic cleanup may be needed)
+- Automatically cleaned up: records older than 30 days are removed during scheduled maintenance
 
 **Queries**:
 ```sql
@@ -418,6 +418,14 @@ foreach ($rows as $row) {
 - **Manual**: `php scripts/migrate.php` or SQL: `VACUUM;`
 - **Impact**: Temporarily locks database during operation
 
+### Cleanup of Old sent_alerts
+- **Purpose**: Remove old notification history to manage database size
+- **Frequency**: Every 24 hours (runs during VACUUM maintenance window)
+- **Retention**: 30 days (records older than 30 days are automatically deleted)
+- **Execution**: Automatic during scheduler loop, runs before VACUUM
+- **Manual**: `php scripts/cleanup_old_sent_alerts.php [days]`
+- **Impact**: Deletes old notification history but retains recent records
+
 ### Backup
 ```sh
 # SQLite built-in backup
@@ -428,12 +436,17 @@ cp data/alerts.sqlite data/alerts_backup.sqlite
 ```
 
 ### Size Management
-- `sent_alerts` grows indefinitely
-- Consider periodic cleanup of old records:
-  ```sql
-  DELETE FROM sent_alerts 
-  WHERE notified_at < date('now', '-90 days');
+- `sent_alerts` grows over time but is automatically cleaned up
+- Old records (>30 days) are automatically removed during scheduled maintenance
+- Manual cleanup if needed:
+  ```sh
+  # Delete records older than 30 days (default)
+  php scripts/cleanup_old_sent_alerts.php
   
+  # Delete records older than custom number of days
+  php scripts/cleanup_old_sent_alerts.php 90
+  
+  # Then run VACUUM to reclaim space
   VACUUM;
   ```
 
