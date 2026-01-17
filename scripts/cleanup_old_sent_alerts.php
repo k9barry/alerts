@@ -85,7 +85,7 @@ try {
     echo "Database vacuum complete.\n";
     echo "Cleanup successful.\n";
     
-} catch (Throwable $e) {
+} catch (\Throwable $e) {
     if ($db->inTransaction()) {
         $db->rollBack();
     }
